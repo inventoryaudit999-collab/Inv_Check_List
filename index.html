@@ -1,0 +1,2089 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>INV Audit – Dashboard & Checklist</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Prompt:wght@500;600;700&display=swap" rel="stylesheet">
+
+<!-- ===== FIREBASE SDK (Realtime Database) ===== -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+
+<style>
+:root {
+  --navy: #0f2744; --blue: #1a4da0; --accent: #f59e0b;
+  --green: #10b981; --red: #ef4444; --purple: #8b5cf6;
+  --surface: #f1f5f9; --card: #fff; --border: #e2e8f0;
+  --text: #1e293b; --muted: #64748b; --sidebar-w: 260px;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Sarabun', sans-serif; background: var(--surface); color: var(--text); min-height: 100vh; }
+
+/* ===== NAV ===== */
+.main-nav {
+  background: var(--navy);
+  padding: 0 28px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+.nav-brand {
+  display: flex;
+  flex-direction: column;
+  margin-right: 32px;
+}
+.nav-brand-label { font-size: 9px; font-weight: 700; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; }
+.nav-brand-title { font-family: 'Prompt', sans-serif; font-size: 14px; font-weight: 700; color: #fff; }
+.nav-tabs { display: flex; gap: 0; height: 100%; }
+.nav-tab {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 20px;
+  color: rgba(255,255,255,0.55);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  height: 100%;
+  white-space: nowrap;
+}
+.nav-tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
+.nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.nav-store-badge {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #fff;
+}
+.nav-store-badge.show { display: flex; }
+.nav-last-update { font-size: 11px; color: rgba(255,255,255,0.35); }
+.ham-btn {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  width: 34px; height: 34px;
+  padding: 7px;
+  border: none; background: rgba(255,255,255,0.1);
+  border-radius: 6px; cursor: pointer;
+}
+.ham-btn span { display: block; height: 2px; background: #fff; border-radius: 2px; }
+
+/* ===== PAGES ===== */
+.page { display: none; }
+.page.active { display: block; }
+
+/* ===== DASHBOARD ===== */
+.dash-content { padding: 24px 28px; }
+
+.dash-hero {
+  background: linear-gradient(135deg, var(--navy) 0%, #1e56b5 100%);
+  border-radius: 14px;
+  padding: 24px 28px;
+  color: #fff;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.dash-hero-text h1 { font-family: 'Prompt', sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 3px; }
+.dash-hero-text p { font-size: 13px; color: rgba(255,255,255,0.65); }
+.dash-hero-stats { margin-left: auto; display: flex; gap: 24px; flex-shrink: 0; }
+.hs { text-align: center; }
+.hs-num { font-family: 'Prompt', sans-serif; font-size: 34px; font-weight: 700; color: var(--accent); line-height: 1; }
+.hs-label { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 4px; }
+
+.overall-card {
+  background: var(--card);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 18px 22px;
+  margin-bottom: 20px;
+}
+.overall-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.overall-head h3 { font-family: 'Prompt', sans-serif; font-size: 16px; font-weight: 700; color: var(--navy); }
+.overall-pct { font-family: 'Prompt', sans-serif; font-size: 30px; font-weight: 700; color: var(--green); }
+.big-bar { height: 10px; background: var(--surface); border-radius: 10px; overflow: hidden; }
+.big-bar-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--accent)); border-radius: 10px; transition: width 0.6s; }
+.bar-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 5px; }
+
+.reg-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+
+.reg-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: all 0.22s;
+  position: relative;
+  overflow: hidden;
+}
+.reg-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--rc, var(--blue)); }
+.reg-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.09); transform: translateY(-2px); }
+
+.reg-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.reg-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.reg-name { font-family: 'Prompt', sans-serif; font-size: 15px; font-weight: 700; color: var(--navy); }
+.reg-sub { font-size: 11px; color: var(--muted); }
+.reg-pct-big { margin-left: auto; font-family: 'Prompt', sans-serif; font-size: 26px; font-weight: 700; }
+.reg-bar { height: 6px; background: var(--surface); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+.reg-bar-fill { height: 100%; border-radius: 10px; transition: width 0.6s; }
+.reg-stats { display: flex; border-top: 1px solid var(--border); padding-top: 10px; }
+.reg-stat { flex: 1; text-align: center; }
+.reg-stat:not(:last-child) { border-right: 1px solid var(--border); }
+.reg-stat-num { font-family: 'Prompt', sans-serif; font-size: 20px; font-weight: 700; }
+.reg-stat-label { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.reg-footer { margin-top: 10px; display: flex; justify-content: flex-end; font-size: 12px; color: var(--blue); font-weight: 600; }
+
+/* Mini dots */
+.mini-dots { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 8px; }
+.mini-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+/* ===== REGIONAL DETAIL ===== */
+.detail-content { padding: 20px 28px; }
+.back-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 14px;
+  font-family: 'Sarabun', sans-serif; font-size: 13px;
+  color: var(--navy); cursor: pointer; margin-bottom: 16px;
+  transition: all 0.2s;
+}
+.back-btn:hover { background: var(--surface); }
+
+.detail-hdr {
+  background: var(--card);
+  border-radius: 12px; border: 1px solid var(--border);
+  padding: 18px 22px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 16px;
+}
+.detail-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.detail-name { font-family: 'Prompt', sans-serif; font-size: 18px; font-weight: 700; color: var(--navy); }
+.detail-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.detail-hdr-stats { margin-left: auto; display: flex; gap: 20px; }
+.dhs { text-align: center; }
+.dhs-num { font-family: 'Prompt', sans-serif; font-size: 22px; font-weight: 700; line-height: 1; }
+.dhs-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+.filter-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+.filter-btn {
+  padding: 5px 13px; border-radius: 20px;
+  border: 1.5px solid var(--border); background: var(--card);
+  font-family: 'Sarabun', sans-serif; font-size: 12px;
+  cursor: pointer; color: var(--muted); transition: all 0.2s;
+}
+.filter-btn:hover { border-color: var(--navy); color: var(--navy); }
+.filter-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+.filter-search {
+  margin-left: auto; padding: 5px 14px;
+  border: 1.5px solid var(--border); border-radius: 20px;
+  font-family: 'Sarabun', sans-serif; font-size: 12px;
+  outline: none; background: var(--card); min-width: 170px; transition: border 0.2s;
+}
+.filter-search:focus { border-color: var(--blue); }
+
+.store-table-wrap { background: var(--card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+.store-table { width: 100%; border-collapse: collapse; }
+.store-table th { background: var(--navy); color: #fff; padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.store-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+.store-table tr:last-child td { border-bottom: none; }
+.store-table tr:hover td { background: #f8faff; }
+
+.progress-cell { min-width: 150px; }
+.mini-prog { height: 5px; background: var(--surface); border-radius: 6px; overflow: hidden; margin-bottom: 3px; }
+.mini-prog-fill { height: 100%; border-radius: 6px; transition: width 0.4s; }
+
+.status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.pill-done { background: #d1fae5; color: #065f46; }
+.pill-prog { background: #fef3c7; color: #92400e; }
+.pill-not { background: #fee2e2; color: #991b1b; }
+
+.phase-select { padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; font-family: 'Sarabun', sans-serif; font-size: 11.5px; outline: none; background: var(--surface); cursor: pointer; }
+.note-mini { padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: 'Sarabun', sans-serif; font-size: 11.5px; width: 100%; min-width: 110px; outline: none; background: var(--surface); }
+.note-mini:focus, .phase-select:focus { border-color: var(--blue); background: #fff; }
+.checklist-link { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--navy); color: #fff; border-radius: 6px; font-size: 11.5px; cursor: pointer; white-space: nowrap; transition: opacity 0.2s; border: none; font-family: 'Sarabun', sans-serif; }
+.checklist-link:hover { opacity: 0.85; }
+
+/* ===== CHECKLIST PAGE ===== */
+.checklist-wrapper {
+  display: flex;
+  min-height: calc(100vh - 56px);
+}
+
+/* Checklist Sidebar */
+.cl-sidebar {
+  width: var(--sidebar-w);
+  background: var(--navy);
+  position: fixed;
+  top: 56px; left: 0; bottom: 0;
+  overflow-y: auto;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s;
+}
+.cl-sidebar.hidden { transform: translateX(-100%); }
+
+.cl-sidebar-head { padding: 18px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.cl-sidebar-logo { font-size: 9px; font-weight: 700; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; margin-bottom: 3px; }
+.cl-sidebar-title { font-family: 'Prompt', sans-serif; font-size: 14px; font-weight: 600; color: #fff; line-height: 1.3; }
+
+.cl-prog-wrap { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.cl-prog-label { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.45); margin-bottom: 5px; }
+.cl-prog-bar { height: 4px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; }
+.cl-prog-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--accent)); border-radius: 10px; transition: width 0.4s; }
+
+.cl-nav { flex: 1; padding: 8px 0; }
+.cl-nav-tab {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: all 0.2s;
+  color: rgba(255,255,255,0.55);
+  font-size: 12.5px;
+}
+.cl-nav-tab:hover { background: rgba(255,255,255,0.06); color: #fff; }
+.cl-nav-tab.active { border-left-color: var(--accent); background: rgba(245,158,11,0.12); color: #fff; font-weight: 600; }
+.cl-nav-tab .tab-icon { font-size: 16px; flex-shrink: 0; }
+.cl-nav-tab .tab-count { margin-left: auto; background: rgba(255,255,255,0.1); border-radius: 20px; padding: 1px 7px; font-size: 10px; color: rgba(255,255,255,0.45); }
+.cl-nav-tab.active .tab-count { background: rgba(245,158,11,0.25); color: var(--accent); }
+
+/* Checklist Main */
+.cl-main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; }
+
+/* Store Bar */
+.store-bar {
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 10px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  position: sticky; top: 56px; z-index: 90;
+}
+.store-label { font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.store-search-wrap { position: relative; flex: 1; max-width: 300px; }
+.store-search-wrap input {
+  width: 100%; padding: 6px 10px 6px 30px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  font-family: 'Sarabun', sans-serif; font-size: 13px;
+  background: var(--surface); color: var(--text); outline: none; transition: border 0.2s;
+}
+.store-search-wrap input:focus { border-color: var(--blue); background: #fff; }
+.store-search-icon { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; pointer-events: none; }
+.store-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.1); max-height: 260px; overflow-y: auto;
+  z-index: 300; display: none;
+}
+.store-dropdown.show { display: block; }
+.store-option { padding: 8px 14px; cursor: pointer; font-size: 12.5px; border-bottom: 1px solid var(--border); transition: background 0.15s; }
+.store-option:last-child { border-bottom: none; }
+.store-option:hover { background: var(--surface); }
+.store-option.selected { background: #dbeafe; color: var(--navy); font-weight: 600; }
+.store-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--navy); color: #fff; padding: 4px 11px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+.store-badge-clear { cursor: pointer; opacity: 0.65; font-size: 13px; }
+.store-badge-clear:hover { opacity: 1; }
+
+/* Checklist Topbar */
+.cl-topbar {
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 11px 24px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.cl-topbar-title { font-family: 'Prompt', sans-serif; font-size: 15px; font-weight: 600; color: var(--navy); }
+.cl-topbar-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.cl-topbar-actions { margin-left: auto; display: flex; gap: 7px; }
+.btn { padding: 6px 13px; border-radius: 7px; border: none; cursor: pointer; font-family: 'Sarabun', sans-serif; font-size: 12.5px; font-weight: 500; transition: all 0.2s; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+.btn-outline:hover { border-color: var(--blue); color: var(--blue); }
+.btn-primary { background: var(--navy); color: #fff; }
+.btn-primary:hover { background: var(--blue); }
+
+/* Checklist Content */
+.cl-content { padding: 20px 24px; flex: 1; }
+
+.cl-info-banner {
+  background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+  border-radius: 10px; padding: 16px 20px; color: #fff; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 14px;
+}
+.cl-info-banner h2 { font-family: 'Prompt', sans-serif; font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+.cl-info-banner p { font-size: 12px; color: rgba(255,255,255,0.65); }
+.cl-banner-stats { margin-left: auto; display: flex; gap: 16px; flex-shrink: 0; }
+.cl-stat-num { font-family: 'Prompt', sans-serif; font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1; }
+.cl-stat-label { font-size: 10px; color: rgba(255,255,255,0.55); margin-top: 2px; text-align: center; }
+
+.night-selector { display: flex; gap: 7px; margin-bottom: 14px; flex-wrap: wrap; }
+.night-btn { padding: 5px 14px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--card); cursor: pointer; font-family: 'Sarabun', sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); transition: all 0.2s; }
+.night-btn:hover { border-color: var(--navy); color: var(--navy); }
+.night-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+
+.summary-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.sum-pill { display: flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+.sum-done { background: #d1fae5; color: #065f46; }
+.sum-fail { background: #fee2e2; color: #991b1b; }
+.sum-pending { background: #fef3c7; color: #92400e; }
+.sum-empty { background: var(--surface); color: var(--muted); }
+
+.category-block { margin-bottom: 20px; }
+.cat-header { display: flex; align-items: center; gap: 9px; padding: 9px 14px; background: var(--navy); border-radius: 7px; margin-bottom: 8px; color: #fff; font-family: 'Prompt', sans-serif; font-size: 12.5px; font-weight: 600; }
+.cat-count { margin-left: auto; font-size: 10px; color: rgba(255,255,255,0.5); font-family: 'Sarabun', sans-serif; font-weight: 400; }
+
+.check-item { background: var(--card); border: 1px solid var(--border); border-radius: 9px; margin-bottom: 7px; overflow: hidden; transition: box-shadow 0.2s; }
+.check-item:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.07); }
+.check-item.done { border-left: 3px solid var(--green); }
+.check-item.fail { border-left: 3px solid var(--red); }
+.check-item.pending { border-left: 3px solid var(--accent); }
+
+.check-row { display: flex; align-items: center; gap: 11px; padding: 12px 14px; cursor: pointer; }
+.check-no { background: var(--surface); border-radius: 6px; padding: 3px 7px; font-size: 10.5px; font-weight: 700; color: var(--navy); flex-shrink: 0; font-family: 'Prompt', sans-serif; min-width: 48px; text-align: center; }
+.check-item.done .check-no { background: #d1fae5; color: #065f46; }
+.check-item.fail .check-no { background: #fee2e2; color: #991b1b; }
+.check-item.pending .check-no { background: #fef3c7; color: #92400e; }
+.check-info { flex: 1; min-width: 0; }
+.check-title { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 2px; line-height: 1.35; }
+.check-meta { display: flex; gap: 10px; flex-wrap: wrap; }
+.meta-tag { font-size: 11px; color: var(--muted); }
+.check-status { flex-shrink: 0; }
+.status-select { border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; font-family: 'Sarabun', sans-serif; font-size: 11.5px; cursor: pointer; background: var(--surface); color: var(--text); outline: none; }
+.toggle-btn { color: var(--muted); font-size: 13px; transition: transform 0.25s; flex-shrink: 0; }
+.check-item.open .toggle-btn { transform: rotate(180deg); }
+
+.check-detail { display: none; border-top: 1px solid var(--border); padding: 12px 14px 12px 72px; background: #fafbff; }
+.check-item.open .check-detail { display: block; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.detail-box { background: var(--card); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; }
+.detail-label { font-size: 9.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+.detail-text { font-size: 12.5px; line-height: 1.55; color: var(--text); white-space: pre-line; }
+.note-input { width: 100%; border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; font-family: 'Sarabun', sans-serif; font-size: 12.5px; resize: none; background: var(--card); color: var(--text); outline: none; transition: border 0.2s; }
+.note-input:focus { border-color: var(--blue); }
+
+.no-store-msg { text-align: center; padding: 50px 20px; color: var(--muted); }
+.no-store-msg .ns-icon { font-size: 44px; margin-bottom: 12px; }
+.no-store-msg p { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+
+/* Sheet sections */
+.sheet-section { display: none; }
+.sheet-section.active { display: block; }
+
+/* Overlay */
+.cl-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99; top: 56px; }
+.cl-overlay.show { display: block; }
+
+
+  .cl-home-tab { color: rgba(255,255,255,0.5) !important; font-size: 12px !important; }
+  .cl-home-tab:hover { color: var(--accent) !important; }
+
+
+  /* ===== STORE PICKER ===== */
+  .picker-page { padding: 24px 28px; }
+  .picker-hero {
+    background: linear-gradient(135deg, var(--navy) 0%, #1e56b5 100%);
+    border-radius: 14px; padding: 22px 28px; color: #fff;
+    margin-bottom: 22px; display: flex; align-items: center; gap: 16px;
+  }
+  .picker-hero-text h2 { font-family: 'Prompt', sans-serif; font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .picker-hero-text p { font-size: 13px; color: rgba(255,255,255,0.65); }
+  .picker-hero-icon { font-size: 38px; flex-shrink: 0; }
+  .picker-hero-right { margin-left: auto; text-align: right; }
+  .picker-store-name { font-family: 'Prompt', sans-serif; font-size: 15px; font-weight: 700; color: var(--accent); }
+  .picker-store-sub { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+
+  /* Search bar */
+  .picker-search-wrap {
+    background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+    padding: 14px 18px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .picker-search-icon { font-size: 18px; flex-shrink: 0; }
+  .picker-search-input {
+    flex: 1; border: none; outline: none; font-family: 'Sarabun', sans-serif;
+    font-size: 15px; background: transparent; color: var(--text);
+  }
+  .picker-search-input::placeholder { color: var(--muted); }
+  .picker-search-clear {
+    color: var(--muted); cursor: pointer; font-size: 18px; flex-shrink: 0; padding: 2px 6px;
+    border-radius: 50%; transition: background 0.2s;
+  }
+  .picker-search-clear:hover { background: var(--surface); }
+
+  /* Regional sections */
+  .picker-region-section { margin-bottom: 22px; }
+  .picker-region-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px;
+    border-radius: 10px; margin-bottom: 10px;
+    border-left: 4px solid var(--rc, var(--navy));
+    background: var(--card); border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+  }
+  .picker-region-icon { font-size: 20px; }
+  .picker-region-name { font-family: 'Prompt', sans-serif; font-size: 14px; font-weight: 700; color: var(--navy); }
+  .picker-region-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .picker-region-count { margin-left: auto; font-size: 11px; color: var(--muted); background: var(--surface); padding: 3px 10px; border-radius: 20px; }
+  .picker-region-toggle { color: var(--muted); font-size: 13px; transition: transform 0.25s; }
+  .picker-region-section.collapsed .picker-region-toggle { transform: rotate(-90deg); }
+  .picker-region-section.collapsed .picker-store-grid { display: none; }
+
+  .picker-store-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
+    padding: 2px 0 6px 0;
+  }
+  .picker-store-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 13px; background: var(--card);
+    border: 1.5px solid var(--border); border-radius: 9px;
+    cursor: pointer; transition: all 0.18s;
+    font-family: 'Sarabun', sans-serif; font-size: 12.5px;
+    color: var(--text); text-align: left; width: 100%;
+    position: relative;
+  }
+  .picker-store-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.1); }
+
+  /* Status colors */
+  .picker-store-btn.s-done {
+    background: #d1fae5; border-color: #10b981; color: #065f46;
+  }
+  .picker-store-btn.s-done:hover { background: #a7f3d0; }
+  .picker-store-btn.s-progress {
+    background: #fef3c7; border-color: #f59e0b; color: #78350f;
+  }
+  .picker-store-btn.s-progress:hover { background: #fde68a; }
+  .picker-store-btn.s-not {
+    background: var(--card); border-color: var(--border); color: var(--muted);
+  }
+  .picker-store-btn.s-not:hover { border-color: #94a3b8; color: var(--text); }
+  .picker-store-btn.selected {
+    outline: 2px solid var(--navy); outline-offset: 1px; font-weight: 700;
+  }
+  .picker-store-pct { margin-left: auto; font-family: 'Prompt', sans-serif; font-size: 11px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+  .picker-store-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  .picker-no-result { text-align: center; padding: 32px; color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 768px) {
+    .picker-page { padding: 14px 12px; }
+    .picker-store-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .picker-store-btn { font-size: 12px; padding: 8px 10px; }
+    .picker-hero { flex-direction: column; gap: 10px; }
+    .picker-hero-right { display: none; }
+  }
+
+
+
+  /* ===== MOBILE BOTTOM NAV ===== */
+  .mobile-bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--navy);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    z-index: 150;
+    padding: 6px 0;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  }
+  .mobile-bottom-nav .mbn-items {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+  }
+  .mbn-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 20px;
+    cursor: pointer;
+    color: rgba(255,255,255,0.5);
+    font-size: 10px;
+    font-family: 'Sarabun', sans-serif;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mbn-item.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .mbn-item .mbn-icon { font-size: 20px; line-height: 1; }
+  .mbn-item.cl-menu-btn { color: rgba(255,255,255,0.5); }
+  .mbn-item.cl-menu-btn.active { color: var(--accent); }
+
+  @media (max-width: 768px) {
+    .mobile-bottom-nav { display: block; }
+    .main-nav { display: none; }
+    body { padding-bottom: 60px; }
+    .cl-sidebar { top: 0 !important; height: 100vh !important; padding-top: 56px; }
+    .cl-overlay { top: 0 !important; }
+  }
+
+  /* ===== EXPORT ===== */
+  .export-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 16px; border-radius: 8px; border: none;
+    font-family: 'Sarabun', sans-serif; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: all 0.2s;
+  }
+  .export-btn-excel { background: #1d6f42; color: #fff; }
+  .export-btn-excel:hover { background: #155234; }
+  .export-btn-print { background: #475569; color: #fff; }
+  .export-btn-print:hover { background: #334155; }
+  .export-actions {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-left: auto;
+  }
+
+  /* Print styles */
+  @media print {
+    .main-nav, .cl-sidebar, .store-bar, .cl-topbar,
+    .export-actions, .check-status, .toggle-btn,
+    .night-selector, .summary-bar, .cl-overlay { display: none !important; }
+    .cl-main { margin-left: 0 !important; }
+    .cl-content { padding: 0 !important; }
+    .check-item { break-inside: avoid; border: 1px solid #ccc !important; margin-bottom: 6px !important; }
+    .check-detail { display: block !important; }
+    .check-row { padding: 10px !important; }
+    .cl-info-banner { background: #0f2744 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .cat-header { background: #0f2744 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .detail-grid { grid-template-columns: 1fr 1fr !important; }
+    .print-header { display: block !important; }
+  }
+  .print-header { display: none; }
+
+  /* Sidebar scrollbar */
+.cl-sidebar::-webkit-scrollbar { width: 3px; }
+.cl-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+/* ===== LEGEND ===== */
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .main-nav { padding: 0 14px; }
+  .nav-brand { display: none; }
+  .ham-btn { display: flex; }
+  .dash-content, .detail-content { padding: 14px 12px; }
+  .reg-grid { grid-template-columns: 1fr; }
+  .dash-hero { flex-direction: column; gap: 10px; }
+  .dash-hero-stats { margin-left: 0; flex-wrap: wrap; gap: 14px; }
+  .detail-hdr { flex-wrap: wrap; }
+  .detail-hdr-stats { margin-left: 0; }
+  /* Sidebar slides from left, full height */
+  .cl-sidebar {
+    top: 56px;
+    transform: translateX(-100%);
+    transition: transform 0.28s ease;
+    z-index: 300;
+    box-shadow: 4px 0 20px rgba(0,0,0,0.25);
+    width: 85vw !important;
+    max-width: 300px;
+  }
+  .cl-sidebar.open { transform: translateX(0) !important; }
+  .cl-sidebar.hidden { transform: translateX(-100%) !important; }
+  .cl-overlay { z-index: 299; top: 56px; }
+  .cl-main { margin-left: 0 !important; }
+  .store-bar { padding: 10px 12px; }
+  .cl-topbar { flex-wrap: wrap; gap: 8px; }
+  .cl-topbar-actions { flex-wrap: wrap; }
+  .export-actions { display: none; }
+  .cl-content { padding: 14px 12px; }
+  .check-detail { padding-left: 12px; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .store-table th:nth-child(5), .store-table td:nth-child(5) { display: none; }
+  .filter-search { min-width: 100px; }
+  .picker-store-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .nav-tabs { gap: 0; overflow-x: auto; }
+  .nav-tab { padding: 0 12px; font-size: 12px; white-space: nowrap; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== MAIN NAV ===== -->
+<nav class="main-nav">
+  <div class="nav-brand">
+    <span class="nav-brand-label">INV Audit</span>
+    <span class="nav-brand-title">Team Monitor</span>
+  </div>
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="showPage('dashboard')" id="ntab-dashboard">📊 Dashboard</div>
+    <div class="nav-tab" onclick="showPage('checklist')" id="ntab-checklist">✅ Checklist</div>
+  </div>
+  <div class="nav-right">
+    <div class="nav-store-badge" id="nav-store-badge">🏬 <span id="nav-store-text"></span></div>
+    <div id="sync-badge" style="display:flex;align-items:center;gap:5px;background:rgba(245,158,11,0.18);border:1px solid rgba(245,158,11,0.4);border-radius:20px;padding:3px 10px;font-size:11px;color:#fcd34d">
+      <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:#f59e0b;animation:pulse 1.5s infinite"></span>
+      <span id="sync-text">กำลังเชื่อมต่อ...</span>
+    </div>
+    <span class="nav-last-update" id="last-update"></span>
+  </div>
+</nav>
+
+<!-- ===== PAGE: DASHBOARD ===== -->
+<div class="page active" id="page-dashboard">
+  <div class="dash-content">
+    <div class="dash-hero">
+      <div style="font-size:36px">📊</div>
+      <div class="dash-hero-text">
+        <h1>Regional Progress Dashboard</h1>
+        <p>ติดตามความคืบหน้าการตรวจนับสินค้าจากข้อมูล Checklist จริงของแต่ละสาขา</p>
+      </div>
+      <div class="dash-hero-stats">
+        <div class="hs"><div class="hs-num">4</div><div class="hs-label">Regional</div></div>
+        <div class="hs"><div class="hs-num" id="total-stores-count">166</div><div class="hs-label">LOC</div></div>
+        <div class="hs">
+          <div class="hs-num" id="ov-done-count" style="color:#10b981">0</div>
+          <div class="hs-label" style="color:rgba(255,255,255,0.5)">✓ Complete</div>
+        </div>
+        <div class="hs">
+          <div class="hs-num" id="ov-prog-count" style="color:#f59e0b">0</div>
+          <div class="hs-label" style="color:rgba(255,255,255,0.5)">⏳ In Progress</div>
+        </div>
+        <div class="hs">
+          <div class="hs-num" id="ov-not-count" style="color:#ef4444">0</div>
+          <div class="hs-label" style="color:rgba(255,255,255,0.5)">✗ Not Started</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="overall-card">
+      <div class="overall-head">
+        <h3>ความคืบหน้ารวมทุก Regional</h3>
+        <div class="overall-pct" id="ov-pct">0%</div>
+      </div>
+      <div class="big-bar"><div class="big-bar-fill" id="ov-bar" style="width:0%"></div></div>
+      <div class="bar-labels"><span></span><span id="ov-bar-mid">0 / 0 สาขา</span><span id="total-stores-label">0 สาขา</span></div>
+    </div>
+
+    <div class="reg-grid" id="reg-grid"></div>
+
+    <div style="margin-top:14px">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>เสร็จสิ้น (100%)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>กำลังดำเนินการ (1-99%)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>ยังไม่เริ่ม (0%)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PAGE: REGIONAL DETAIL ===== -->
+<div class="page" id="page-detail">
+  <div class="detail-content">
+    <button class="back-btn" onclick="showPage('dashboard')">← กลับหน้า Dashboard</button>
+    <div class="detail-hdr" id="detail-hdr"></div>
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="filterDtl('all',this)">ทั้งหมด</button>
+      <button class="filter-btn" onclick="filterDtl('done',this)">✓ เสร็จแล้ว</button>
+      <button class="filter-btn" onclick="filterDtl('progress',this)">⏳ กำลังดำเนินการ</button>
+      <button class="filter-btn" onclick="filterDtl('not',this)">✗ ยังไม่เริ่ม</button>
+      <input class="filter-search" type="text" placeholder="🔍 ค้นหาสาขา..." oninput="searchDtl(this.value)">
+      <button class="export-btn export-btn-excel" onclick="exportRegionExcel()" style="margin-left:8px">📊 Export</button>
+    </div>
+    <div class="store-table-wrap">
+      <table class="store-table">
+        <thead><tr>
+          <th>#</th><th>สาขา</th><th>ความคืบหน้า (จาก Checklist)</th>
+          <th>ขั้นตอนล่าสุด</th><th>สถานะ</th><th>เปิด Checklist</th>
+        </tr></thead>
+        <tbody id="dtl-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PAGE: CHECKLIST ===== -->
+<div class="page" id="page-checklist">
+  <div class="checklist-wrapper">
+
+    <div class="cl-overlay" id="cl-overlay" onclick="closeCLSidebar()"></div>
+
+    <nav class="cl-sidebar" id="cl-sidebar">
+      <div class="cl-sidebar-head">
+        <div class="cl-sidebar-logo">INV Checklist</div>
+        <div class="cl-sidebar-title" id="cl-store-label">— เลือกสาขา —</div>
+      </div>
+      <div class="cl-prog-wrap">
+        <div class="cl-prog-label"><span>ความคืบหน้ารวม</span><span id="cl-prog-text">0 / 56</span></div>
+        <div class="cl-prog-bar"><div class="cl-prog-fill" id="cl-prog-fill" style="width:0%"></div></div>
+      </div>
+      <div class="cl-nav">
+        <div class="cl-nav-tab cl-home-tab" onclick="goHome()"><span class="tab-icon">🏠</span><span>เลือกสาขา</span></div>
+        <div style="height:1px;background:rgba(255,255,255,0.08);margin:4px 0"></div>
+        <div class="cl-nav-tab active" onclick="showCLSheet(0)" id="cltab0"><span class="tab-icon">⚙️</span><span>ก่อนนับ (Preparation)</span><span class="tab-count" id="clcnt0">0/20</span></div>
+        <div class="cl-nav-tab" onclick="showCLSheet(1)" id="cltab1"><span class="tab-icon">🌙</span><span>Pre-Count (คืนที่ 1-4)</span><span class="tab-count" id="clcnt1">0/11</span></div>
+        <div class="cl-nav-tab" onclick="showCLSheet(2)" id="cltab2"><span class="tab-icon">📋</span><span>Regular Count</span><span class="tab-count" id="clcnt2">0/15</span></div>
+        <div class="cl-nav-tab" onclick="showCLSheet(3)" id="cltab3"><span class="tab-icon">✅</span><span>Recheck & Final</span><span class="tab-count" id="clcnt3">0/10</span></div>
+      </div>
+    </nav>
+
+    <div class="cl-main">
+      <!-- Store Bar -->
+      <div class="store-bar">
+        <span class="store-label">🏬 สาขา :</span>
+        <div class="store-search-wrap" id="cl-store-search-wrap">
+          <span class="store-search-icon">🔍</span>
+          <input type="text" id="cl-store-input" placeholder="พิมพ์ชื่อหรือรหัสสาขา..."
+            oninput="filterCLStores()" onfocus="openCLDropdown()" onblur="closeCLDropdownDelay()"
+            onkeydown="handleStoreKey(event)" autocomplete="off">
+          <div class="store-dropdown" id="cl-store-dropdown"></div>
+        </div>
+        <div id="cl-store-badge-wrap" style="display:none">
+          <div class="store-badge">
+            <span id="cl-store-badge-text">—</span>
+            <span class="store-badge-clear" onclick="clearCLStore()">✕</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CL Topbar -->
+      <div class="cl-topbar">
+        <div>
+          <div class="cl-topbar-title" id="cl-topbar-title">ก่อนนับ (Pre-Count Preparation)</div>
+          <div class="cl-topbar-sub" id="cl-topbar-sub">เลือกสาขาก่อนเริ่มใช้งาน</div>
+        </div>
+        <div class="cl-topbar-actions">
+          <div class="export-actions">
+            <button class="export-btn export-btn-excel" onclick="exportExcel()">📊 Export Excel</button>
+            <button class="export-btn export-btn-print" onclick="exportPrint()">🖨️ พิมพ์</button>
+          </div>
+          <button class="btn btn-outline" onclick="resetCLSheet()">🔄 รีเซ็ต</button>
+          <button class="btn btn-primary" onclick="markCLAllDone()">✓ เสร็จทั้งหมด</button>
+        </div>
+      </div>
+
+      <div class="cl-content">
+        <!-- Sheet Sections -->
+        <div class="sheet-section active" id="cl-sheet0">
+          <div class="cl-info-banner">
+            <div style="font-size:28px">⚙️</div>
+            <div><h2>ก่อนนับ (Pre-Count Preparation)</h2><p>ทีม Inventory ต้องดำเนินการให้ครบถ้วน ก่อนเริ่มการตรวจนับสินค้า</p></div>
+            <div class="cl-banner-stats">
+              <div><div class="cl-stat-num">20</div><div class="cl-stat-label">รายการ</div></div>
+              <div><div class="cl-stat-num" id="cl-s0-done" style="color:var(--green)">0</div><div class="cl-stat-label">เสร็จ</div></div>
+            </div>
+          </div>
+          <div class="summary-bar" id="cl-sum0"></div>
+          <div id="cl-items0"></div>
+        </div>
+        <div class="sheet-section" id="cl-sheet1">
+          <div class="cl-info-banner">
+            <div style="font-size:28px">🌙</div>
+            <div><h2>Pre-Count (คืนที่ 1-4)</h2><p>ดำเนินการซ้ำทุกคืน Pre-Count — เลือกคืนที่กำลังดำเนินการ</p></div>
+            <div class="cl-banner-stats">
+              <div><div class="cl-stat-num">11</div><div class="cl-stat-label">รายการ</div></div>
+              <div><div class="cl-stat-num" id="cl-s1-done" style="color:var(--green)">0</div><div class="cl-stat-label">เสร็จ</div></div>
+            </div>
+          </div>
+          <div class="night-selector">
+            <button class="night-btn active" onclick="selectCLNight(1,this)">🌙 คืนที่ 1</button>
+            <button class="night-btn" onclick="selectCLNight(2,this)">🌙 คืนที่ 2</button>
+            <button class="night-btn" onclick="selectCLNight(3,this)">🌙 คืนที่ 3</button>
+            <button class="night-btn" onclick="selectCLNight(4,this)">🌙 คืนที่ 4</button>
+          </div>
+          <div class="summary-bar" id="cl-sum1"></div>
+          <div id="cl-items1"></div>
+        </div>
+        <div class="sheet-section" id="cl-sheet2">
+          <div class="cl-info-banner">
+            <div style="font-size:28px">📋</div>
+            <div><h2>Regular Count</h2><p>ดำเนินการช่วงเย็นก่อน Regular Count และตลอดวัน Regular Count</p></div>
+            <div class="cl-banner-stats">
+              <div><div class="cl-stat-num">15</div><div class="cl-stat-label">รายการ</div></div>
+              <div><div class="cl-stat-num" id="cl-s2-done" style="color:var(--green)">0</div><div class="cl-stat-label">เสร็จ</div></div>
+            </div>
+          </div>
+          <div class="summary-bar" id="cl-sum2"></div>
+          <div id="cl-items2"></div>
+        </div>
+        <div class="sheet-section" id="cl-sheet3">
+          <div class="cl-info-banner">
+            <div style="font-size:28px">✅</div>
+            <div><h2>Recheck & Final Report</h2><p>ดำเนินการหลัง Regular Count เสร็จสิ้น – ตรวจสอบและสรุปผล</p></div>
+            <div class="cl-banner-stats">
+              <div><div class="cl-stat-num">10</div><div class="cl-stat-label">รายการ</div></div>
+              <div><div class="cl-stat-num" id="cl-s3-done" style="color:var(--green)">0</div><div class="cl-stat-label">เสร็จ</div></div>
+            </div>
+          </div>
+          <div class="summary-bar" id="cl-sum3"></div>
+          <div id="cl-items3"></div>
+        </div>
+
+        <div id="cl-no-store" style="display:none">
+          <!-- STORE PICKER -->
+          <div class="picker-page" id="store-picker">
+            <div class="picker-hero">
+              <div class="picker-hero-icon">🏬</div>
+              <div class="picker-hero-text">
+                <h2>เลือกสาขาที่ต้องการทำ Checklist</h2>
+                <p>กดเลือกสาขาด้านล่าง หรือพิมพ์ชื่อ/รหัสสาขาในช่องค้นหาด้านบน</p>
+              </div>
+              <div id="picker-cur-store" style="display:none;text-align:right;flex-shrink:0">
+                <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:3px">กำลังใช้งาน</div>
+                <div class="picker-store-name" id="picker-cur-name">—</div>
+                <button onclick="showCLSheet(0)" style="margin-top:6px;padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-family:Sarabun,sans-serif;font-size:12px;cursor:pointer;font-weight:600">
+                  ดู Checklist →
+                </button>
+              </div>
+            </div>
+            <div id="picker-regions"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 🔥 FIREBASE REALTIME DATABASE SYNC
+// ============================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyD-9vKBP9rnQQJbPGmLhCWVtr0WOyVPSpo",
+  authDomain: "inv-checklist.firebaseapp.com",
+  databaseURL: "https://inv-checklist-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "inv-checklist",
+  storageBucket: "inv-checklist.firebasestorage.app",
+  messagingSenderId: "315582127708",
+  appId: "1:315582127708:web:83671d6b8fe465bcd79099"
+};
+
+let fbDB = null;
+let fbReady = false;
+let fbInitialLoad = false;
+let fbWriteQueue = []; // Queue ของ writes ที่ค้างขณะ offline
+
+try {
+  firebase.initializeApp(firebaseConfig);
+  fbDB = firebase.database();
+  window._fbDB = fbDB;
+} catch(e) {
+  console.warn('[Firebase] init failed:', e);
+}
+
+// แปลง localStorage key ให้เป็น Firebase path
+// key: inv_{store}_{sheet}_{no}[_n{night}][_note]
+function parseInvKey(key) {
+  // ยอมรับ Thai char, space, dash, parentheses ในชื่อสาขา
+  const m = key.match(/^inv_(.+?)_(\d+)_([A-Z0-9\-]+)(?:_n(\d+))?(_note)?$/);
+  if (!m) return null;
+  return { store: m[1], sheet: m[2], no: m[3], night: m[4] || '', isNote: !!m[5] };
+}
+
+// แปลง store name ให้ปลอดภัยสำหรับ Firebase key (เลี่ยงอักขระต้องห้าม . # $ [ ] /)
+function fbSafeKey(s) {
+  return String(s).replace(/[.#$\[\]\/]/g, '_');
+}
+
+// Sync 1 ค่าขึ้น Firebase
+function fbSyncOne(key, val) {
+  const p = parseInvKey(key);
+  if (!p) return; // ไม่ใช่ checklist key (เช่น inv_cl_store)
+  const path = `checklists/${fbSafeKey(p.store)}/${p.sheet}_${p.no}${p.night?'_n'+p.night:''}/${p.isNote?'note':'status'}`;
+
+  if (!fbReady || !fbDB) {
+    // Queue ไว้ส่งทีหลังเมื่อ online
+    fbWriteQueue.push({ path, val });
+    return;
+  }
+  try {
+    if (val == null || val === '') {
+      fbDB.ref(path).remove();
+    } else {
+      fbDB.ref(path).set(val);
+    }
+  } catch(e) {
+    console.warn('[fbSyncOne]', e);
+  }
+}
+
+// Hook localStorage.setItem / removeItem ให้ sync ขึ้น Firebase อัตโนมัติ
+// (วิธีนี้ทำให้ฟังก์ชันเดิมไม่ต้องแก้เลย แค่ทำงาน sync เพิ่มเอง)
+(function hookLocalStorage() {
+  const origSet = localStorage.setItem.bind(localStorage);
+  const origRemove = localStorage.removeItem.bind(localStorage);
+
+  localStorage.setItem = function(k, v) {
+    origSet(k, v);
+    if (k && k.startsWith('inv_') && k !== 'inv_cl_store') fbSyncOne(k, v);
+  };
+  localStorage.removeItem = function(k) {
+    origRemove(k);
+    if (k && k.startsWith('inv_') && k !== 'inv_cl_store') fbSyncOne(k, '');
+  };
+})();
+
+// อัปเดต UI สถานะ sync
+function setSyncStatus(state, msg) {
+  const dot = document.getElementById('sync-dot');
+  const txt = document.getElementById('sync-text');
+  const badge = document.getElementById('sync-badge');
+  if (!dot || !txt || !badge) return;
+  const colors = {
+    connecting: { dot:'#f59e0b', bg:'rgba(245,158,11,0.18)', bd:'rgba(245,158,11,0.4)', tx:'#fcd34d', anim:'pulse 1.5s infinite' },
+    online:     { dot:'#10b981', bg:'rgba(16,185,129,0.18)', bd:'rgba(16,185,129,0.4)', tx:'#6ee7b7', anim:'none' },
+    offline:    { dot:'#ef4444', bg:'rgba(239,68,68,0.18)',  bd:'rgba(239,68,68,0.4)',  tx:'#fca5a5', anim:'pulse 1.5s infinite' },
+  };
+  const c = colors[state] || colors.connecting;
+  dot.style.background = c.dot;
+  dot.style.animation = c.anim;
+  badge.style.background = c.bg;
+  badge.style.borderColor = c.bd;
+  badge.style.color = c.tx;
+  txt.textContent = msg;
+}
+
+// โหลดข้อมูลทั้งหมดจาก Firebase ครั้งแรก + Listen realtime changes
+function initFirebaseSync() {
+  if (!fbDB) { setSyncStatus('offline', 'ออฟไลน์'); return; }
+  setSyncStatus('connecting', 'กำลังเชื่อมต่อ...');
+
+  // Detect online/offline ผ่าน .info/connected
+  fbDB.ref('.info/connected').on('value', snap => {
+    if (snap.val() === true) {
+      fbReady = true;
+      setSyncStatus('online', 'ออนไลน์');
+      // ส่ง queue ที่ค้างไว้
+      while (fbWriteQueue.length) {
+        const { path, val } = fbWriteQueue.shift();
+        try {
+          if (val == null || val === '') fbDB.ref(path).remove();
+          else fbDB.ref(path).set(val);
+        } catch(e) {}
+      }
+    } else {
+      fbReady = false;
+      setSyncStatus('offline', 'ออฟไลน์');
+    }
+  });
+
+  // Listen การเปลี่ยนแปลงทั้งหมด → update localStorage cache → re-render
+  fbDB.ref('checklists').on('value', snapshot => {
+    const data = snapshot.val() || {};
+    let applied = 0;
+
+    // ลบ keys เก่าที่ไม่อยู่ใน Firebase แล้ว (ทำเฉพาะตอน initial load)
+    if (!fbInitialLoad) {
+      const lsKeysToCheck = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('inv_') && k !== 'inv_cl_store') lsKeysToCheck.push(k);
+      }
+      // ไม่ลบเพื่อความปลอดภัย — แค่ merge ทับด้วยข้อมูลจาก Firebase
+    }
+
+    // Apply Firebase data → localStorage (ใช้ original setItem ตรงๆ เพื่อไม่ให้ trigger sync กลับ)
+    const origSet = Object.getPrototypeOf(localStorage).setItem.bind(localStorage);
+    const origRemove = Object.getPrototypeOf(localStorage).removeItem.bind(localStorage);
+
+    for (const [store, items] of Object.entries(data)) {
+      if (!items || typeof items !== 'object') continue;
+      for (const [itemKey, itemData] of Object.entries(items)) {
+        if (!itemData || typeof itemData !== 'object') continue;
+        // itemKey: "0_S1" หรือ "1_P-S1_n1"
+        const m = itemKey.match(/^(\d+)_(.+?)(?:_n(\d+))?$/);
+        if (!m) continue;
+        const sheetIdx = m[1];
+        const no = m[2];
+        const night = m[3] || '';
+        const lsKey = `inv_${store}_${sheetIdx}_${no}${night?'_n'+night:''}`;
+
+        if (itemData.status) origSet(lsKey, itemData.status);
+        else origRemove(lsKey);
+
+        if (itemData.note) origSet(lsKey + '_note', itemData.note);
+        else origRemove(lsKey + '_note');
+        applied++;
+      }
+    }
+
+    fbInitialLoad = true;
+
+    // Re-render หน้าจอแบบ debounce
+    clearTimeout(window._fbRenderTimer);
+    window._fbRenderTimer = setTimeout(() => {
+      if (typeof renderDashboard === 'function') renderDashboard();
+      if (typeof clStore !== 'undefined' && clStore && typeof renderCLSheet === 'function') {
+        for (let i = 0; i < SHEETS.length; i++) renderCLSheet(i);
+      }
+      if (typeof renderStorePicker === 'function' &&
+          document.getElementById('cl-no-store') &&
+          document.getElementById('cl-no-store').style.display !== 'none') {
+        renderStorePicker();
+      }
+      const lu = document.getElementById('last-update');
+      if (lu) lu.textContent = '🔄 ' + new Date().toLocaleTimeString('th-TH');
+    }, 250);
+  }, err => {
+    console.error('[Firebase listen error]', err);
+    setSyncStatus('offline', 'เชื่อมต่อล้มเหลว');
+  });
+}
+
+// เริ่ม sync ทันทีเมื่อ DOM พร้อม
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initFirebaseSync);
+} else {
+  initFirebaseSync();
+}
+</script>
+
+<script>
+// ============================================================
+// SHARED DATA
+// ============================================================
+const STORES = ["001 - Lat Phrao", "002 - Chaeng Watthana", "003 - Srinakarin", "004 - Bangbon", "005 - Chon Buri", "006 - Chiang Mai", "007 - Nakhon Ratchasima", "008 - Rangsit", "009 - Hat Yai", "010 - Udon Thani", "011 - Phitsanulok", "012 - Khon Kaen", "013 - Surat Thani", "014 - Ubon Ratchathani", "015 - Rayong", "016 - Nakhon Sawan", "017 - Charansanitwong", "018 - Sathon", "019 - Nakhon Pathom", "020 - Surin", "021 - Samsen", "022 - Nakhon Si Thammarat", "023 - Chiang Rai", "024 - Sakon Nakhon", "025 - Suphan Buri", "026 - Chanthaburi", "027 - Phuket", "028 - Roi Et", "029 - Trang", "030 - Sa Kaeo", "031 - Koh Samui", "032 - Buri Ram", "033 - Si Sa Ket", "034 - Lamphun", "035 - Krabi", "036 - Phetchaburi", "037 - Chaiyaphum", "038 - Saraburi", "039 - Pranburi", "040 - Chachoengsao", "041 - Chiang Mai 2_Hang Dong", "042 - Ram Inthra", "043 - Chumphon", "044 - Pattaya", "045 - Kamphaeng Phet", "046 - Kanchanaburi", "047 - Lop Buri", "048 - Nong Khai", "049 - Ratchaburi", "050 - Mae Rim", "051 - Ayutthaya", "052 - Lampang", "053 - Hua Hin", "054 - Khlong Luang", "055 - Loei", "056 - Phetchabun", "057 - Bang Phli", "058 - Mukdahan", "059 - Satun", "060 - Trat", "061 - Chum Phae", "062 - Rawai", "063 - Nakhon Phanom", "064 - Koh Pha Ngan", "065 - Bueng Kan", "066 - North Pattaya", "067 - Mae Sai", "068 - Salaya", "069 - Phatthalung", "070 - Sukhothai", "071 - Patong", "072 - Samut Sakhon", "073 - Mae Sot", "074 - Pak Chong", "075 - Thalang", "076 - Ranong", "077 - Lamai", "078 - Kanlapaphruek", "079 - Yasothon", "080 - Maha Sarakham", "081 - Fang", "082 - Nakhon Nayok", "083 - Nakhon In", "084 - Ban Phe", "085 - Thung Song", "086 - Srinakarin 2", "087 - Phayao", "089 - Phitsanulok 2", "091 - F-Talad Mueang Mai (M-St.6)", "095 - F-Si Racha (M-St.109)", "096 - Town In Town", "100 - Phrae", "101 - Koh Chang", "102 - Nakhon Ratchasima 2", "103 - Nan", "104 - Ao Nang", "105 - Karon", "106 - Warin Chamrap", "107 - Nong Bua Lam Phu", "108 - Nong Chok", "109 - Laem Chabang", "110 - Prachuap Khiri Khan", "111 - Phet Kasem", "113 - Wang Hin", "114 - Sing Buri", "115 - Bang Bua Thong", "116 - Kalasin", "117 - Udom Suk", "118 - Ramkhamhaeng (Sammakorn)", "119 - Phichit", "120 - Pathum Thani", "121 - Bodindecha", "122 - Pracha Uthit", "123 - Sukhumvit 71", "124 - Nawamin 70", "125 - Cha-am", "126 - On Nut", "127 - Suksawat", "128 - Kabin Buri", "129 - Lat Krabang", "130 - Na Thong Charoen", "131 - Bo Win", "132 - Sattahip", "133 - Ramkhamhaeng 24", "134 - Amata Nakorn", "135 - Bang Kho Laem", "136 - Khon Kaen 2", "137 - Wongsakorn 2", "138 - Meng Jai", "139 - Sukhumvit 22", "140 - Chan Road", "141 - Lam Luk Ka", "142 - Phraeksa", "143 - Pradit Manutham", "144 - Rungroj Market (Khlong 4)", "145 - Phongphet", "146 - Uttaradit", "147 - Mueang Thong", "148 - Liap Khlong 2", "149 - Om Noi", "150 - Sanam Bin Nam", "151 - Thep Rak", "152 - Samut Songkhram", "153 - Wiang Sa", "154 - Prachin Buri", "155 - Pinklao", "156 - Samut Prakan", "157 - Nakhon Ratchasima 3 (Save One)", "158 - Nakhon Sawan 2 (Phrom Nimit)", "159 - Udon Thani 2 (Ban Lueam)", "160 - Mahachai", "161 - Khon Kaen 3 (Ban Non Muang)", "162 - Amata Nakorn 2", "163 - Songkhla", "164 - Chai Nat", "165 - Si Ayutthaya Road", "166 - Rawai 2", "167 - Chiang Mai (Chom Thong)", "168 - Ban Bueng (Chon Buri)", "169 - Phangnga", "170 - Amnat Charoen", "171 - Jo Ho (Nakhon Ratchasima)", "172 - Ban Phai", "175 - Happitat (Bangna)", "301 - Rama 4", "303 - Siri Mangkhalachan", "350 - Ram Inthra KM.4", "351 - Sino Park", "352 - Phatthanakan"];
+
+const SHEETS = [
+  {
+    title: 'ก่อนนับ (Pre-Count Preparation)',
+    sub: 'INV CHECKLIST – ทีม Inventory ต้องดำเนินการให้ครบถ้วน',
+    data: [
+      {type:'cat', name:'⚙️  System Setup'},
+      {no:'S1', title:'Delete Data Inventory All (ยกเว้น Process Apply)', detail:'ลบข้อมูล Inventory ทั้งหมดในระบบก่อนเริ่มรอบใหม่\n(ยกเว้นรายการที่อยู่ระหว่าง Process Apply)', owner:'INV Team + IT', deadline:'ก่อน Pre-count', status:'done'},
+      {no:'S2', title:'Check Access Point / Router', detail:'ตรวจสอบ AP/Router ทุกจุดในพื้นที่ตรวจนับ\nบันทึกจุดอับสัญญาณ WiFi พร้อมแจ้ง IT', owner:'INV Team + IT', deadline:'ก่อน Pre-count'},
+      {no:'S3', title:'Create Inventory Aisle-Bay', detail:'สร้าง Aisle-Bay ในระบบให้ตรงกับ Layout จริงของสาขา\nรวมพื้นที่ Tent / Container / GR', owner:'INV Team + IT', deadline:'ก่อน Pre-count'},
+      {no:'S4', title:'Create Employee Count Book', detail:'สร้างรายชื่อพนักงานนับ (Count Book) ในระบบ\nพร้อม QR Code สำหรับลงทะเบียน', owner:'INV Team', deadline:'ก่อน Pre-count'},
+      {no:'S5', title:'Print Layout & Count Plan', detail:'พิมพ์ Layout สาขา และแผนการนับ Pre-Count\nแจกจ่ายให้ทีม Supervisor ทุกคน', owner:'INV Team', deadline:'ก่อน Pre-count'},
+      {type:'cat', name:'📱  Tag & Equipment'},
+      {no:'E1', title:'เบิก HHT & ตรวจสอบ Battery', detail:'เบิก HHT ให้ครบตามจำนวนทีมนับ\nตรวจสอบ Battery และ Charger พร้อมใช้งาน', owner:'สาขา', deadline:'ก่อน Pre-count'},
+      {no:'E2', title:'Forklift & Scooter – Battery', detail:'ตรวจสอบแบตเตอรี่ Forklift/Scooter ให้เต็ม\nพร้อมใช้งานตลอดการนับ', owner:'สาขา', deadline:'ก่อน Pre-count'},
+      {no:'E3', title:'Print Count Tag & Sticker', detail:'พิมพ์ Tag และ Sticker สำหรับติดสินค้าที่นับแล้ว\nตรวจสอบจำนวนให้เพียงพอ', owner:'INV Team', deadline:'ก่อน Pre-count'},
+      {type:'cat', name:'🏬  Store Preparation'},
+      {no:'ST1', title:'ประสานงานสาขา – จัดสินค้าก่อนนับ', detail:'แจ้งสาขาจัดสินค้าตาม Layout ที่กำหนด\nตรวจสอบพื้นที่ที่จะตรวจนับ', owner:'INV Supervisor', deadline:'1 วันก่อน Pre-count'},
+      {no:'ST2', title:'กำหนดพื้นที่ห้ามขายระหว่างนับ', detail:'ประสานงานกับ Store Manager\nกำหนดพื้นที่และช่วงเวลาที่ห้ามเคลื่อนย้ายสินค้า', owner:'INV Supervisor', deadline:'ก่อน Pre-count'},
+      {no:'ST3', title:'ตรวจสอบสินค้า GR ค้างรับ', detail:'ตรวจสอบสินค้าที่รอรับใน GR\nประสานงานรับก่อนเริ่มนับ หรือ Hold ไว้ก่อน', owner:'INV Team', deadline:'ก่อน Pre-count'},
+      {no:'ST4', title:'ตรวจสอบ Deposit Goods', detail:'สำรวจสินค้ารับฝากทั้งหมด\nแยกออกจากพื้นที่นับ และบันทึกรายการ', owner:'INV Team', deadline:'ก่อน Pre-count'},
+      {type:'cat', name:'📋  Document & Briefing'},
+      {no:'D1', title:'Briefing ทีมนับ', detail:'บรีฟทีมนับทุกคน\nขั้นตอนการนับ การใช้ HHT การแก้ไข Error', owner:'INV Supervisor', deadline:'ก่อนเริ่มนับ'},
+      {no:'D2', title:'แจก Count Plan และ Layout', detail:'แจก Layout และแผนการนับให้ทุกทีม\nกำหนด Zone และ Responsible Person', owner:'INV Supervisor', deadline:'ก่อนเริ่มนับ'},
+      {no:'D3', title:'สร้างไฟล์ Excel Control Sheet', detail:'สร้างไฟล์ควบคุมงาน\nบันทึก HHT In/Out, Count Progress, Issues', owner:'INV Team', deadline:'ก่อน Pre-count'},
+      {no:'D4', title:'ตรวจสอบ SOP การนับสินค้าพิเศษ', detail:'ทบทวน SOP สำหรับสินค้าน้ำหนัก, สินค้า Hi-Value\nสินค้าในห้องเย็น และ Non-Scan Item', owner:'INV Supervisor', deadline:'ก่อนเริ่มนับ'},
+      {type:'cat', name:'🔗  System Integration Check'},
+      {no:'SYS1', title:'Test HHT Connection', detail:'ทดสอบการเชื่อมต่อ HHT กับระบบ\nทดลอง Scan สินค้าตัวอย่าง', owner:'INV Team + IT', deadline:'ก่อน Pre-count'},
+      {no:'SYS2', title:'Verify Item Master Data', detail:'ตรวจสอบข้อมูลสินค้าในระบบ\nBarcode ถูกต้องและตรงกับสินค้าจริง', owner:'INV Team + IT', deadline:'ก่อน Pre-count'},
+      {no:'SYS3', title:'Check Transfer Pending', detail:'ตรวจสอบรายการ Transfer ที่ยังค้างอยู่\nPO / GR / Transfer ที่ยังไม่ Complete', owner:'INV Team', deadline:'ก่อน Pre-count'},
+      {no:'SYS4', title:'Backup ข้อมูลก่อนเริ่ม', detail:'สำรองข้อมูล Stock ปัจจุบัน\nบันทึก Snapshot ก่อนเริ่มกระบวนการ Inventory', owner:'IT', deadline:'ก่อน Pre-count'},
+    ]
+  },
+  {
+    title: 'Pre-Count (คืนที่ 1-4)',
+    sub: 'INV CHECKLIST – ดำเนินการซ้ำทุกคืน Pre-Count',
+    data: [
+      {type:'cat', name:'⚙️  System – ก่อนเริ่มนับแต่ละคืน'},
+      {no:'P-S1', title:'Start Background Process', detail:'สั่ง Start Background Process ในระบบก่อนเริ่มตรวจนับ\nตรวจสอบว่า Process ทำงานสมบูรณ์', owner:'INV Team', deadline:'ก่อนเริ่มนับ'},
+      {no:'P-S2', title:'Monitor Process Status', detail:'ติดตาม Status ของ Background Process ระหว่างนับ\nแจ้งทีมหาก Process มีปัญหา', owner:'INV Team', deadline:'ระหว่างนับ'},
+      {type:'cat', name:'📱  Tag & Equipment – ประจำคืน'},
+      {no:'P-E1', title:'เบิก-คืน HHT / ตรวจสอบ Battery', detail:'เบิก HHT ให้พนักงานนับทุกคน บันทึกลง Control Sheet\nตรวจสอบ Battery พอเพียงสำหรับคืนนั้น', owner:'สาขา', deadline:'ก่อนเริ่มนับ', note:'INV Team ช่วย Support ครั้งแรกและหลังนับเสร็จให้สาขาเก็บไว้ใช้ครั้งถัดไป'},
+      {no:'P-E2', title:'Forklift & Scooter – Battery', detail:'ตรวจสอบแบตเตอรี่ Forklift/Scooter\nเติมแบตก่อนเริ่มถ้าต่ำกว่า 50%', owner:'สาขา', deadline:'ก่อนเริ่มนับ'},
+      {type:'cat', name:'📦  การนับ – ระหว่างคืน'},
+      {no:'P-C1', title:'กำกับทีมนับตาม Zone ที่กำหนด', detail:'ตรวจสอบว่าทีมนับทำงานตาม Zone\nไม่ข้าม Zone โดยไม่ได้รับอนุญาต', owner:'INV Supervisor', deadline:'ระหว่างนับ'},
+      {no:'P-C2', title:'Monitor Count Progress', detail:'ติดตาม Progress การนับแต่ละ Zone\nบันทึกใน Control Sheet ทุก 1-2 ชม.', owner:'INV Supervisor', deadline:'ระหว่างนับ'},
+      {no:'P-C3', title:'Handle Count Errors / Issues', detail:'แก้ไขปัญหาการนับ เช่น HHT Error, Barcode ไม่ขึ้น\nบันทึก Issue และวิธีแก้ไข', owner:'INV Team', deadline:'ระหว่างนับ'},
+      {type:'cat', name:'🔒  ปิดงาน – หลังนับแต่ละคืน'},
+      {no:'P-CL1', title:'สรุป Count Result ของคืนนั้น', detail:'สรุปจำนวน Aisle-Bay ที่นับเสร็จ\nและรายการที่ยังค้างอยู่', owner:'INV Supervisor', deadline:'หลังนับเสร็จ'},
+      {no:'P-CL2', title:'Export Excel Transfer', detail:'ดึงรายงาน Excel Transfer ของคืนนั้น\nตรวจสอบความครบถ้วน บันทึกเป็นไฟล์แยกตามคืน', owner:'INV Team', deadline:'หลังนับเสร็จ'},
+      {no:'P-CL3', title:'นับ HHT / Router กลับ', detail:'รับคืน HHT ทุกเครื่อง\nนับจำนวนให้ครบ บันทึกลง Control Sheet', owner:'INV Team', deadline:'หลังนับเสร็จ'},
+      {no:'P-CL4', title:'สรุปปัญหาและแจ้งทีม', detail:'สรุปปัญหาที่พบในคืนนั้น\nแจ้งทีมเพื่อป้องกันปัญหาซ้ำในคืนถัดไป', owner:'INV Supervisor', deadline:'หลังนับเสร็จ'},
+    ]
+  },
+  {
+    title: 'Regular Count',
+    sub: 'INV CHECKLIST – ดำเนินการช่วงเย็นก่อน Regular Count และตลอดวัน Regular Count',
+    data: [
+      {type:'cat', name:'🔒  ปิดงาน Pre-Count (ช่วงเย็นก่อน Regular)'},
+      {no:'R-PC1', title:'เบย์ว่าง – สรุป Aisle-Bay Pre-Count', detail:'สรุป Aisle-Bay ทั้งหมดที่ตรวจนับใน Pre-count ครบถ้วน\nตรวจสอบว่าทุก Location ID ถูกปิดแล้ว', owner:'INV Team', deadline:'ก่อน Regular', status:'fail'},
+      {no:'R-PC2', title:'สรุป Excel Transfer (Pre-Count ทั้งหมด)', detail:'รวบรวม Excel Transfer ทุกคืน Pre-count เป็นไฟล์เดียว\nตรวจสอบความครบถ้วนและความถูกต้อง', owner:'INV Team', deadline:'ก่อน Regular'},
+      {no:'R-PC3', title:'Stop Background Process (Pre-Count)', detail:'สั่ง Stop Background Process ที่ใช้ใน Pre-count\nก่อนเริ่ม Regular Count', owner:'INV Team', deadline:'ก่อน Regular'},
+      {no:'R-PC4', title:'Monitor Not-Count + Item Hi & Lo Value', detail:'ดึงรายงานสินค้าที่ยังไม่ได้นับ (Not-Count)\nและรายการ Hi/Lo Value เพื่อเฝ้าระวัง', owner:'INV Team', deadline:'ก่อน Regular'},
+      {type:'cat', name:'⚙️  System – Regular Count'},
+      {no:'R-S1', title:'Start Regular Count Process', detail:'สั่ง Start Process สำหรับ Regular Count\nตรวจสอบ Status ก่อนอนุญาตให้เริ่มนับ', owner:'INV Team', deadline:'เริ่ม Regular'},
+      {no:'R-S2', title:'Freeze Stock (Cut-off)', detail:'บันทึก Stock Freeze ณ เวลา Cut-off\nห้ามรับสินค้าเพิ่มระหว่าง Regular Count', owner:'INV Team + สาขา', deadline:'เวลา Cut-off'},
+      {type:'cat', name:'📦  การนับ Regular Count'},
+      {no:'R-C1', title:'นับสินค้า Hi-Value โดย Supervisor', detail:'Supervisor นับสินค้า Hi-Value ด้วยตนเอง\nหรือกำกับการนับอย่างใกล้ชิด', owner:'INV Supervisor', deadline:'ระหว่าง Regular'},
+      {no:'R-C2', title:'นับสินค้าในห้องเย็น / Frozen', detail:'ตรวจนับสินค้าในห้องเย็นและห้อง Frozen\nใช้ PPE ที่เหมาะสม', owner:'INV Team', deadline:'ระหว่าง Regular'},
+      {no:'R-C3', title:'นับสินค้า Tent & Container', detail:'ตรวจนับสินค้าใน Tent และ Container\nบันทึก Location ให้ชัดเจน', owner:'INV Team', deadline:'ระหว่าง Regular'},
+      {no:'R-C4', title:'นับสินค้า GR / Deposit', detail:'ตรวจนับสินค้าใน GR Area และ Deposit\nแยกรายการให้ชัดเจน', owner:'INV Team', deadline:'ระหว่าง Regular'},
+      {type:'cat', name:'📊  สรุปผล Regular Count'},
+      {no:'R-RPT1', title:'Export Result Regular Count', detail:'ดึงผล Regular Count จากระบบ\nตรวจสอบ Variance กับ Book Stock', owner:'INV Team', deadline:'หลัง Regular'},
+      {no:'R-RPT2', title:'สรุป Variance Report', detail:'วิเคราะห์ผลต่างที่มีนัยสำคัญ\nเตรียมรายการสำหรับ Recheck', owner:'INV Supervisor', deadline:'หลัง Regular'},
+      {no:'R-RPT3', title:'แจ้ง Store Manager ผล Preliminary', detail:'รายงานผลเบื้องต้นให้ Store Manager\nก่อนเริ่มกระบวนการ Recheck', owner:'INV Supervisor', deadline:'หลัง Regular'},
+      {no:'R-RPT4', title:'จัดทำรายการ Recheck List', detail:'สรุปรายการที่ต้องนับซ้ำ (Recheck)\nเรียงลำดับ Priority ตาม Variance', owner:'INV Team', deadline:'หลัง Regular'},
+      {type:'cat', name:'🔧  Equipment & Closeout'},
+      {no:'R-EQ1', title:'นับ HHT / Equipment กลับ', detail:'รับคืนและนับ HHT ทุกเครื่อง\nตรวจสอบสภาพและบันทึก', owner:'INV Team', deadline:'หลัง Regular'},
+    ]
+  },
+  {
+    title: 'Recheck & Final Report',
+    sub: 'INV CHECKLIST – ดำเนินการหลัง Regular Count เสร็จสิ้น – ตรวจสอบและสรุปผล',
+    data: [
+      {type:'cat', name:'📱  Tag & Equipment – Recheck'},
+      {no:'RC-E1', title:'เบิก-คืน HHT / Battery', detail:'เบิก HHT ให้ทีม Recheck บันทึก Control Sheet\nตรวจสอบ Battery ให้เพียงพอ', owner:'สาขา', deadline:'ก่อนเริ่ม Recheck', status:'pending'},
+      {no:'RC-E2', title:'Forklift & Scooter – Battery', detail:'ตรวจสอบแบตเตอรี่ Forklift/Scooter ก่อนเริ่ม Recheck', owner:'สาขา', deadline:'ก่อนเริ่ม Recheck'},
+      {no:'RC-E3', title:'นับ HHT / Router กลับ', detail:'นับและรับคืน HHT ทุกเครื่องหลัง Recheck\nตรวจสอบสภาพและบันทึกการคืน', owner:'INV Team', deadline:'หลัง Recheck'},
+      {no:'RC-E4', title:'Report Invl32 Yearly Count และ เอกสารต่างๆ', detail:'สาขาตรวจสอบเอกสารที่ปริ้นออกที่ห้อง Server\nTransfers, Recheck ทั้งหมด พร้อมนำฝากส่ง Data Safe (บริษัทรับฝากเอกสาร เก็บ 7 ปี)', owner:'สาขา', deadline:'หลัง Apply'},
+      {type:'cat', name:'🔍  Recheck Process'},
+      {no:'RC-C1', title:'นับซ้ำรายการ Variance สูง', detail:'Recheck รายการที่มี Variance เกินเกณฑ์\nบันทึกผลและเหตุผลของ Variance', owner:'INV Supervisor', deadline:'ระหว่าง Recheck'},
+      {no:'RC-C2', title:'Verify Hi-Value Items', detail:'ตรวจสอบซ้ำรายการ Hi-Value ทั้งหมด\nต้องมี Supervisor ร่วมนับและลงนาม', owner:'INV Supervisor', deadline:'ระหว่าง Recheck'},
+      {type:'cat', name:'📊  Final Report'},
+      {no:'RC-F1', title:'สรุปผล Recheck และอัปเดตระบบ', detail:'บันทึกผล Recheck เข้าระบบ\nตรวจสอบว่า Variance ลดลงอยู่ในเกณฑ์', owner:'INV Team', deadline:'หลัง Recheck'},
+      {no:'RC-F2', title:'จัดทำ Final Inventory Report', detail:'สรุปผล Inventory ทั้งหมด\nเปรียบเทียบ Book vs Physical Stock', owner:'INV Supervisor', deadline:'หลัง Recheck'},
+      {no:'RC-F3', title:'Apply ผลตรวจนับเข้าระบบ', detail:'สั่ง Apply ผล Inventory เข้า Stock\nตรวจสอบผลลัพธ์หลัง Apply', owner:'INV Team', deadline:'หลัง Approve'},
+      {type:'cat', name:'✅  Closeout'},
+      {no:'RC-CL1', title:'รายงานผลสรุปให้ผู้บริหาร', detail:'จัดทำ Summary Report สำหรับผู้บริหาร\nรวม Accuracy Rate, Variance, Issues', owner:'INV Supervisor', deadline:'หลัง Apply'},
+    ]
+  }
+];
+
+const REGIONAL_DATA = {
+  "Regional 1": {
+    color:"#3b82f6", bg:"#dbeafe", icon:"🗺️", area:"ภาคเหนือ + อีสานบน",
+    stores:["ST06 - เชียงใหม่","ST10 - อุดรธานี","ST100 - แพร่","ST103 - น่าน","ST107 - หนองบัวลำพู","ST11 - พิษณุโลก","ST114 - สิงห์บุรี","ST116 - กาฬสินธุ์","ST119 - พิจิตร","ST12 - ขอนแก่น","ST136 - ขอนแก่น2","ST146 - อุตรดิษถ์","ST158 - นครสวรรค์ 2 (พรหมนิมิต)","ST159 - อุดรธานี 2 (บ้านเลื่อม)","ST16 - นครสวรรค์","ST161 - ขอนแก่น3 (บ้านโนนม่วง)","ST164 - ชัยนาท","ST167 - เชียงใหม่ (จอมทอง)","ST172 - บ้านไผ่","ST23 - เชียงราย","ST24 - สกลนคร","ST25 - สุพรรณบุรี","ST28 - ร้อยเอ็ด","ST303 - Siri Mangkhalachan","ST34 - ลำพูน","ST37 - ชัยภูมิ","ST38 - สระบุรี","ST41 - เชียงใหม่ 2","ST45 - กำแพงเพชร","ST47 - ลพบุรี","ST48 - หนองคาย","ST50 - แม่ริม","ST52 - ลำปาง","ST55 - เลย","ST56 - เพชรบูรณ์","ST58 - มุกดาหาร","ST61 - ชุมแพ","ST63 - นครพนม","ST65 - บึงกาฬ","ST67 - แม่สาย","ST70 - สุโขทัย","ST73 - แม่สอด","ST74 - ปากช่อง","ST79 - ยโสธร","ST80 - มหาสารคาม","ST81 - ฝาง","ST87 - พะเยา","ST89 - พิษณุโลก 2"]
+  },
+  "Regional 2": {
+    color:"#10b981", bg:"#d1fae5", icon:"🏙️", area:"กรุงเทพฯ + ปริมณฑล",
+    stores:["301 - Rama 4","350 - Ram Inthra KM.4","351 - Sino Park","352 - Phatthanakan","ST01 - ลาดพร้าว","ST02 - แจ้งวัฒนะ","ST03 - ศรีนครินทร์","ST04 - บางบอน","ST08 - รังสิต","ST108 - หนองจอก","ST111 - เพชรเกษม","ST113 - วังหิน","ST115 - บางบัวทอง","ST117 - อุดมสุข","ST118 - รามคำแหง","ST120 - ปทุมธานี","ST121 - บดินทรเดชา","ST122 - ประชาอุทิศ","ST123 - สุขุมวิท71","ST124 - นวมินทรึ70","ST126 - อ่อนนุช","ST127 - สุขสวัสดิ์","ST129 - ลาดกระบัง","ST130 - นาทองเจริญ","ST133 - รามคำแหง24","ST135 - บางคอแหลม","ST137 - วงศกร2","ST138 - เหม่งจ๋าย","ST139 - สุขุมวิท22","ST140 - ถนนจันทน์","ST141 - ลำลูกกา","ST142 - แพรกษา","ST143 - ประดิษฐ์มนูธรรม","ST144 - ตลาดรุ่งโรจน์","ST145 - พงษ์เพชร","ST147 - เมืองทอง","ST148 - เลียบคลอง2","ST149 - อ้อมน้อย","ST150 - สนามบินน้ำ","ST151 - เทพรักษ์","ST152 - สมุทรสงคราม","ST155 - ปิ่นกล้า","ST156 - สมุทรปราการ","ST160 - มหาชัย","ST165 - ถนนศรีอยุธยา","ST17 - จรัญสนิทวงศ์","ST18 - สาทร","ST19 - นครปฐม","ST21 - สามเสน","ST42 - รามอินทรา","ST46 - กาญจนบุรี","ST49 - ราชบุรี","ST51 - อยุธยา","ST54 - คลองหลวง","ST57 - บางพลี","ST68 - ศาลายา","ST72 - สมุทรสาคร","ST78 - กัลปพฤกษ์","ST83 - นครอินทร์","ST86 - ศรีนครินทร์ 2","ST96 - ทาวน์ อิน ทาวน์"]
+  },
+  "Regional 3": {
+    color:"#f59e0b", bg:"#fef3c7", icon:"🌾", area:"ภาคอีสาน + ภาคตะวันออก",
+    stores:["ST05 - ชลบุรี","ST07 - นครราชสีมา","ST101 - เกาะช้าง","ST102 - นครราชสีมา2","ST106 - วารินชำราบ","ST109 - แหลมฉบัง","ST125 - ชะอำ","ST128 - กบินทร์บุรี","ST131 - บ่อวิน","ST132 - สัตหีบ","ST134 - อมตะนคร","ST14 - อุบลราชธานี","ST15 - ระยอง","ST154 - ปราจีนบุรี","ST157 - นครราชสีมา 3 (เซฟวัน)","ST162-อมตะนคร 2","ST168 - บ้านบึง","ST170 - อำนาจเจริญ","ST171 - จอหอ","ST20 - สุรินทร์","ST26 - จันทบุรี","ST30 - สระแก้ว","ST32 - บุรีรัมย์","ST33 - ศรีสะเกษ","ST36 - เพชรบุรี","ST39 - ปราณบุรี","ST40 - ฉะเชิงเทรา","ST44 - พัทยา","ST53 - หัวหิน","ST60 - ตราด","ST66 - พัทยาเหนือ","ST82 - นครนายก","ST84 - บ้านเพ"]
+  },
+  "Regional 4": {
+    color:"#8b5cf6", bg:"#ede9fe", icon:"🌴", area:"ภาคใต้",
+    stores:["ST09 - หาดใหญ่","ST104 - อ่าวนาง","ST105 - กะรน","ST110 - ประจวบคีรีขันธ์","ST13 - สุราษฎร์ธานี","ST153 - เวียงสระ","ST163 - สงขลา","ST166 - ราไวย์ 2","ST169 - พังงา","ST22 - นครศรีธรรมราช","ST27 - ภูเก็ต","ST29 - ตรัง","ST31 - สมุย","ST35 - กระบี่","ST43 - ชุมพร","ST59 - สตูล","ST62 - ราไวย์","ST64 - เกาะพะงัน","ST69 - พัทลุง","ST71 - ป่าตอง","ST75 - ถลาง","ST76 - ระนอง","ST77 - ละไม","ST85 - ทุ่งสง"]
+  }
+};
+
+const PHASES = ['— ยังไม่เริ่ม','⚙️ Preparation','🌙 Pre-Count','📋 Regular Count','🔍 Recheck','✅ เสร็จสิ้น'];
+
+// ============================================================
+// STORAGE HELPERS — คำนวณ % จาก Checklist จริง
+// ============================================================
+function getStoreKey(store, sheetIdx, no, night='') {
+  return `inv_${store}_${sheetIdx}_${no}${night?'_n'+night:''}`;
+}
+
+function getItemStatus(store, sheetIdx, no, night='') {
+  return localStorage.getItem(getStoreKey(store, sheetIdx, no, night)) || '';
+}
+
+function setItemStatus(store, sheetIdx, no, val, night='') {
+  const key = getStoreKey(store, sheetIdx, no, night);
+  if (val) localStorage.setItem(key, val);
+  else localStorage.removeItem(key);
+}
+
+function getItemNote(store, sheetIdx, no, night='') {
+  return localStorage.getItem(getStoreKey(store, sheetIdx, no, night) + '_note') || '';
+}
+
+function setItemNote(store, sheetIdx, no, val, night='') {
+  const key = getStoreKey(store, sheetIdx, no, night) + '_note';
+  if (val) localStorage.setItem(key, val);
+  else localStorage.removeItem(key);
+}
+
+// คำนวณ % จากสถานะ Checklist จริง
+function calcStorePct(store) {
+  if (!store) return 0;
+  const allItems = [];
+  for (let si = 0; si < SHEETS.length; si++) {
+    const items = SHEETS[si].data.filter(d => !d.type);
+    const night = si === 1 ? 1 : '';
+    for (const item of items) {
+      allItems.push({ si, no: item.no, night });
+    }
+  }
+  if (!allItems.length) return 0;
+  let done = 0;
+  for (const it of allItems) {
+    const s = getItemStatus(store, it.si, it.no, it.night);
+    if (s === 'done') done++;
+  }
+  return Math.round(done / allItems.length * 100);
+}
+
+// หา Phase ล่าสุด จาก sheet ที่มีความคืบหน้า
+function getStorePhase(store) {
+  const phaseNames = ['⚙️ Preparation','🌙 Pre-Count','📋 Regular Count','✅ Recheck & Final'];
+  let lastPhase = '— ยังไม่เริ่ม';
+  for (let si = 0; si < SHEETS.length; si++) {
+    const items = SHEETS[si].data.filter(d => !d.type);
+    const night = si === 1 ? 1 : '';
+    const hasDone = items.some(item => getItemStatus(store, si, item.no, night) === 'done');
+    if (hasDone) lastPhase = phaseNames[si] || lastPhase;
+  }
+  return lastPhase;
+}
+
+function getStatusClass(pct) {
+  if (pct === 100) return 'done';
+  if (pct > 0) return 'progress';
+  return 'not';
+}
+
+function getStatusPill(pct) {
+  if (pct === 100) return '<span class="status-pill pill-done">✓ เสร็จแล้ว</span>';
+  if (pct > 0) return `<span class="status-pill pill-prog">⏳ ${pct}%</span>`;
+  return '<span class="status-pill pill-not">✗ ยังไม่เริ่ม</span>';
+}
+
+function getRegionStats(rname) {
+  const stores = REGIONAL_DATA[rname].stores;
+  let done=0, inprog=0, sumPct=0;
+  for (const s of stores) {
+    const pct = calcStorePct(s);
+    sumPct += pct;
+    if (pct===100) done++;
+    else if (pct>0) inprog++;
+  }
+  const total = stores.length;
+  return { done, inprog, notStarted: total-done-inprog, total, avgPct: total ? Math.round(sumPct/total) : 0 };
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+let currentPage = 'dashboard';
+
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  const tab = document.getElementById('ntab-' + page);
+  if (tab) tab.classList.add('active');
+  currentPage = page;
+  if (page === 'dashboard') renderDashboard();
+  if (page === 'checklist') {
+    if (!clStore) showNoCLStore();
+    else showCLContent();
+  }
+  updateHamVisibility();
+  updateMBN(page);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ============================================================
+// DASHBOARD RENDER
+// ============================================================
+function renderDashboard() {
+  let totalStores=0, totalDone=0, sumPct=0;
+  for (const r of Object.keys(REGIONAL_DATA)) {
+    const st = getRegionStats(r);
+    totalStores += st.total;
+    totalDone += st.done;
+    sumPct += st.avgPct * st.total;
+  }
+  const avgPct = totalStores ? Math.round(sumPct/totalStores) : 0;
+
+  let totalProg=0, totalNot=0;
+  for (const r of Object.keys(REGIONAL_DATA)) {
+    const st = getRegionStats(r);
+    totalProg += st.inprog;
+    totalNot += st.notStarted;
+  }
+  document.getElementById('ov-pct').textContent = avgPct + '%';
+  document.getElementById('ov-bar').style.width = avgPct + '%';
+  document.getElementById('ov-done-count').textContent = totalDone;
+  if (document.getElementById('ov-prog-count')) document.getElementById('ov-prog-count').textContent = totalProg;
+  if (document.getElementById('ov-not-count')) document.getElementById('ov-not-count').textContent = totalNot;
+  document.getElementById('ov-bar-mid').textContent = `${totalDone} / ${totalStores} LOC`;
+  document.getElementById('total-stores-count').textContent = totalStores;
+  document.getElementById('total-stores-label').textContent = totalStores + ' LOC';
+
+  const grid = document.getElementById('reg-grid');
+  grid.innerHTML = '';
+
+  for (const [rname, rd] of Object.entries(REGIONAL_DATA)) {
+    const st = getRegionStats(rname);
+    const dots = rd.stores.slice(0,36).map(s => {
+      const pct = calcStorePct(s);
+      const c = pct===100?'var(--green)':pct>0?'var(--accent)':'#e2e8f0';
+      return `<div class="mini-dot" style="background:${c}" title="${s}: ${pct}%"></div>`;
+    }).join('');
+
+    const card = document.createElement('div');
+    card.className = 'reg-card';
+    card.style.setProperty('--rc', rd.color);
+    card.innerHTML = `
+      <div class="reg-head">
+        <div class="reg-icon" style="background:${rd.bg}">${rd.icon}</div>
+        <div>
+          <div class="reg-name">${rname}</div>
+          <div class="reg-sub">${rd.area} · ${st.total} สาขา</div>
+        </div>
+        <div class="reg-pct-big" style="color:${rd.color}">${st.avgPct}%</div>
+      </div>
+      <div class="reg-bar"><div class="reg-bar-fill" style="width:${st.avgPct}%;background:${rd.color}"></div></div>
+      <div class="mini-dots" style="margin-bottom:10px">${dots}${rd.stores.length>36?`<span style="font-size:10px;color:var(--muted)">+${rd.stores.length-36}</span>`:''}</div>
+      <div class="reg-stats">
+        <div class="reg-stat"><div class="reg-stat-num" style="color:var(--green)">${st.done}</div><div class="reg-stat-label">เสร็จแล้ว</div></div>
+        <div class="reg-stat"><div class="reg-stat-num" style="color:var(--accent)">${st.inprog}</div><div class="reg-stat-label">กำลังดำเนินการ</div></div>
+        <div class="reg-stat"><div class="reg-stat-num" style="color:var(--red)">${st.notStarted}</div><div class="reg-stat-label">ยังไม่เริ่ม</div></div>
+      </div>
+      <div class="reg-footer">ดูรายละเอียด →</div>`;
+    card.onclick = () => showDetail(rname);
+    grid.appendChild(card);
+  }
+
+  // update time
+  document.getElementById('last-update').textContent = 'อัปเดต ' + new Date().toLocaleTimeString('th-TH');
+}
+
+// ============================================================
+// REGIONAL DETAIL
+// ============================================================
+let curRegion = '';
+let dtlFilter = 'all';
+let dtlSearch = '';
+
+function showDetail(rname) {
+  curRegion = rname;
+  dtlFilter = 'all';
+  dtlSearch = '';
+  document.querySelectorAll('.filter-btn').forEach((b,i) => { b.classList.toggle('active', i===0); });
+  if (document.querySelector('.filter-search')) document.querySelector('.filter-search').value = '';
+
+  const rd = REGIONAL_DATA[rname];
+  const st = getRegionStats(rname);
+
+  document.getElementById('detail-hdr').innerHTML = `
+    <div class="detail-icon" style="background:${rd.bg}">${rd.icon}</div>
+    <div>
+      <div class="detail-name">${rname}</div>
+      <div class="detail-sub">${rd.area} · ${st.total} สาขา</div>
+    </div>
+    <div class="detail-hdr-stats">
+      <div class="dhs"><div class="dhs-num" style="color:${rd.color}">${st.avgPct}%</div><div class="dhs-label">คืบหน้า</div></div>
+      <div class="dhs"><div class="dhs-num" style="color:var(--green)">${st.done}</div><div class="dhs-label">เสร็จ</div></div>
+      <div class="dhs"><div class="dhs-num" style="color:var(--accent)">${st.inprog}</div><div class="dhs-label">กำลังทำ</div></div>
+      <div class="dhs"><div class="dhs-num" style="color:var(--red)">${st.notStarted}</div><div class="dhs-label">ยังไม่เริ่ม</div></div>
+    </div>`;
+
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-detail').classList.add('active');
+  renderDtlTable();
+}
+
+function renderDtlTable() {
+  const rd = REGIONAL_DATA[curRegion];
+  let stores = rd.stores.filter(s => {
+    const pct = calcStorePct(s);
+    const sc = getStatusClass(pct);
+    if (dtlFilter !== 'all' && sc !== dtlFilter) return false;
+    if (dtlSearch && !s.toLowerCase().includes(dtlSearch.toLowerCase())) return false;
+    return true;
+  });
+
+  const tbody = document.getElementById('dtl-tbody');
+  tbody.innerHTML = stores.map((s, i) => {
+    const pct = calcStorePct(s);
+    const phase = getStorePhase(s);
+    const barColor = pct===100?'var(--green)':pct>0?'var(--accent)':'#e2e8f0';
+    return `<tr>
+      <td style="color:var(--muted);font-size:11px">${i+1}</td>
+      <td style="font-weight:600">${s}</td>
+      <td class="progress-cell">
+        <div class="mini-prog"><div class="mini-prog-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        <div style="font-size:11px;color:var(--muted)">${pct}% (${pct===100?'เสร็จสิ้น':pct>0?'กำลังดำเนินการ':'ยังไม่เริ่ม'})</div>
+      </td>
+      <td style="font-size:12px">${phase}</td>
+      <td>${getStatusPill(pct)}</td>
+      <td><button class="checklist-link" onclick="openChecklist('${s}')">📋 เปิด Checklist</button></td>
+    </tr>`;
+  }).join('');
+
+  if (!stores.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:28px;color:var(--muted)">ไม่พบข้อมูล</td></tr>';
+}
+
+function filterDtl(f, btn) {
+  dtlFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDtlTable();
+}
+
+function searchDtl(val) {
+  dtlSearch = val;
+  renderDtlTable();
+}
+
+function openChecklist(store) {
+  selectCLStore(store);
+  showPage('checklist');
+}
+
+// ============================================================
+// CHECKLIST
+// ============================================================
+let clStore = localStorage.getItem('inv_cl_store') || '';
+let clSheet = 0;
+let clNight = 1;
+
+function getCLKey(sheetIdx, no, night='') {
+  return `inv_${clStore}_${sheetIdx}_${no}${night?'_n'+night:''}`;
+}
+
+function getCLStatus(si, no, night='') {
+  return localStorage.getItem(getCLKey(si, no, night)) || '';
+}
+
+function setCLStatus(si, no, val, night='') {
+  const key = getCLKey(si, no, night);
+  if (val) localStorage.setItem(key, val);
+  else localStorage.removeItem(key);
+}
+
+function getCLNote(si, no, night='') {
+  return localStorage.getItem(getCLKey(si, no, night) + '_note') || '';
+}
+
+function setCLNote(si, no, val, night='') {
+  const key = getCLKey(si, no, night) + '_note';
+  if (val) localStorage.setItem(key, val);
+  else localStorage.removeItem(key);
+}
+
+function statusClass(s) { return s==='done'?'done':s==='fail'?'fail':s==='pending'?'pending':''; }
+
+function renderCLSheet(si) {
+  const sheet = SHEETS[si];
+  const night = si===1 ? clNight : '';
+  const container = document.getElementById(`cl-items${si}`);
+  if (!container) return;
+
+  let cats = [];
+  let cur = {name:'', items:[]};
+  for (const d of sheet.data) {
+    if (d.type==='cat') { if (cur.items.length) cats.push({...cur}); cur={name:d.name,items:[]}; }
+    else cur.items.push(d);
+  }
+  if (cur.items.length) cats.push(cur);
+
+  let html = '';
+  for (const cat of cats) {
+    html += `<div class="category-block"><div class="cat-header">${cat.name}<span class="cat-count">${cat.items.length} รายการ</span></div>`;
+    for (const item of cat.items) {
+      const s = clStore ? (getCLStatus(si, item.no, night) || '') : (item.status || '');
+      const n = clStore ? getCLNote(si, item.no, night) : '';
+      const sc = statusClass(s);
+      const cid = `cl_ci_${si}_${item.no.replace(/[^a-zA-Z0-9]/g,'_')}${night?'_n'+night:''}`;
+      html += `<div class="check-item ${sc}" id="${cid}">
+        <div class="check-row" onclick="clToggle('${cid}')">
+          <div class="check-no">${item.no}</div>
+          <div class="check-info">
+            <div class="check-title">${item.title}</div>
+            <div class="check-meta"><span class="meta-tag">👤 ${item.owner}</span><span class="meta-tag">⏰ ${item.deadline}</span></div>
+          </div>
+          <div class="check-status" onclick="event.stopPropagation()">
+            <select class="status-select" onchange="clChangeStatus('${si}','${item.no}','${night}',this.value,'${cid}')">
+              <option value="" ${!s?'selected':''}>— ยังไม่ระบุ</option>
+              <option value="done" ${s==='done'?'selected':''}>✓ เรียบร้อย</option>
+              <option value="pending" ${s==='pending'?'selected':''}>⏳ กำลังดำเนินการ</option>
+              <option value="fail" ${s==='fail'?'selected':''}>✗ ยังไม่เรียบร้อย</option>
+            </select>
+          </div>
+          <div class="toggle-btn">▼</div>
+        </div>
+        <div class="check-detail">
+          <div class="detail-grid">
+            <div class="detail-box"><div class="detail-label">📋 รายละเอียด</div><div class="detail-text">${item.detail}</div></div>
+            <div class="detail-box"><div class="detail-label">👤 ผู้รับผิดชอบ & เวลา</div><div class="detail-text"><strong>${item.owner}</strong>
+${item.deadline}</div></div>
+          </div>
+          <textarea class="note-input" rows="2" placeholder="หมายเหตุ..." onchange="setCLNote(${si},'${item.no}','${night}',this.value)">${n}</textarea>
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+  updateCLSummary(si, night);
+  updateCLProgress();
+}
+
+function clToggle(cid) { document.getElementById(cid)?.classList.toggle('open'); }
+
+function clChangeStatus(si, no, night, val, cid) {
+  if (!clStore) return;
+  setCLStatus(parseInt(si), no, val, night);
+  const el = document.getElementById(cid);
+  if (el) { const wasOpen = el.classList.contains('open'); el.className = `check-item ${statusClass(val)}`; if (wasOpen) el.classList.add('open'); }
+  updateCLSummary(parseInt(si), night);
+  updateAllNavCounts();
+  updateCLProgress();
+}
+
+function updateCLSummary(si, night='') {
+  const items = SHEETS[si].data.filter(d => !d.type);
+  let done=0, fail=0, pending=0, empty=0;
+  for (const item of items) {
+    const s = clStore ? (getCLStatus(si, item.no, night) || '') : (item.status || '');
+    if (s==='done') done++; else if (s==='fail') fail++; else if (s==='pending') pending++; else empty++;
+  }
+  const total = items.length;
+  const el = document.getElementById(`cl-sum${si}`);
+  if (el) el.innerHTML = `
+    <div class="sum-pill sum-done">✓ เรียบร้อย ${done}</div>
+    <div class="sum-pill sum-pending">⏳ กำลังดำเนินการ ${pending}</div>
+    <div class="sum-pill sum-fail">✗ ยังไม่เรียบร้อย ${fail}</div>
+    <div class="sum-pill sum-empty">— ยังไม่ระบุ ${empty}</div>`;
+  const doneEl = document.getElementById(`cl-s${si}-done`);
+  if (doneEl) doneEl.textContent = done;
+  // Update nav tab count
+  const cntEl = document.getElementById(`clcnt${si}`);
+  if (cntEl) {
+    cntEl.textContent = `${done}/${total}`;
+    cntEl.style.color = done===total ? 'var(--green)' : done>0 ? 'var(--accent)' : '';
+    cntEl.style.background = done===total ? 'rgba(16,185,129,0.2)' : done>0 ? 'rgba(245,158,11,0.2)' : '';
+  }
+}
+
+function updateAllNavCounts() {
+  for (let si=0; si<SHEETS.length; si++) {
+    const night = si===1 ? clNight : '';
+    updateCLSummary(si, night);
+  }
+}
+
+function updateCLProgress() {
+  let total=0, done=0;
+  for (let si=0; si<SHEETS.length; si++) {
+    const items = SHEETS[si].data.filter(d => !d.type);
+    const night = si===1 ? clNight : '';
+    for (const item of items) {
+      total++;
+      if (clStore && getCLStatus(si, item.no, night) === 'done') done++;
+    }
+  }
+  const pct = total ? Math.round(done/total*100) : 0;
+  document.getElementById('cl-prog-text').textContent = `${done} / ${total}`;
+  document.getElementById('cl-prog-fill').style.width = pct + '%';
+  // Realtime dashboard refresh
+  if (typeof renderDashboard === 'function') {
+    clearTimeout(window._dashRefreshTimer);
+    window._dashRefreshTimer = setTimeout(() => {
+      renderDashboard();
+      document.getElementById('last-update').textContent = 'อัปเดต ' + new Date().toLocaleTimeString('th-TH');
+    }, 800);
+  }
+}
+
+function showCLSheet(idx) {
+  clSheet = idx;
+  // Make sure checklist page is active
+  if (!document.getElementById('page-checklist').classList.contains('active')) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('page-checklist').classList.add('active');
+    document.getElementById('ntab-checklist').classList.add('active');
+  }
+  document.querySelectorAll('.sheet-section').forEach(s => { s.classList.remove('active'); s.style.display='none'; });
+  document.querySelectorAll('.cl-nav-tab').forEach(t => t.classList.remove('active'));
+  const sheetEl = document.getElementById(`cl-sheet${idx}`);
+  const tabEl = document.getElementById(`cltab${idx}`);
+  if (sheetEl) { sheetEl.classList.add('active'); sheetEl.style.display='block'; }
+  if (tabEl) tabEl.classList.add('active');
+  document.getElementById('cl-topbar-title').textContent = SHEETS[idx].title;
+  document.getElementById('cl-topbar-sub').textContent = clStore ? '📍 ' + clStore : 'เลือกสาขาก่อนเริ่มใช้งาน';
+  if (clStore) {
+    document.getElementById('cl-no-store').style.display = 'none';
+    sheetEl.style.display = 'block';
+  } else {
+    sheetEl.style.display = 'none';
+    document.getElementById('cl-no-store').style.display = 'block';
+  }
+  if (window.innerWidth <= 768) {
+    closeCLSidebar();
+    // Small delay to ensure content is visible
+    setTimeout(() => window.scrollTo({top:0, behavior:'smooth'}), 50);
+  } else {
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+}
+
+function selectCLNight(n, btn) {
+  clNight = n;
+  document.querySelectorAll('.night-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCLSheet(1);
+}
+
+function resetCLSheet() {
+  if (!clStore) return;
+  if (!confirm('รีเซ็ตสถานะทุกรายการในหน้านี้?')) return;
+  const sheet = SHEETS[clSheet];
+  const items = sheet.data.filter(d=>!d.type);
+  if (clSheet === 1) {
+    // Reset all 4 nights
+    for (let n=1; n<=4; n++) {
+      items.forEach(item => {
+        setCLStatus(clSheet, item.no, '', n);
+        setCLNote(clSheet, item.no, '', n);
+      });
+    }
+  } else {
+    items.forEach(item => {
+      setCLStatus(clSheet, item.no, '', '');
+      setCLNote(clSheet, item.no, '', '');
+      // Also clear any default status embedded in SHEETS data
+      delete item._status;
+    });
+    // Force clear ALL localStorage keys for this sheet/store
+    const keysToRemove = [];
+    for (let i=0; i<localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(`inv_${clStore}_${clSheet}_`)) keysToRemove.push(k);
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+  }
+  renderCLSheet(clSheet);
+}
+
+function markCLAllDone() {
+  if (!clStore) return;
+  const night = clSheet===1 ? clNight : '';
+  SHEETS[clSheet].data.filter(d=>!d.type).forEach(item => setCLStatus(clSheet, item.no, 'done', night));
+  renderCLSheet(clSheet);
+}
+
+// Store selection
+function handleStoreKey(e) {
+  if (e.key === 'Enter') {
+    const dd = document.getElementById('cl-store-dropdown');
+    const first = dd.querySelector('.store-option:not([style*="text-align:center"])');
+    if (first) { first.dispatchEvent(new MouseEvent('mousedown')); }
+    else {
+      // exact match
+      const val = document.getElementById('cl-store-input').value.trim();
+      const match = STORES.find(s => s.toLowerCase() === val.toLowerCase());
+      if (match) selectCLStore(match);
+    }
+  }
+}
+
+function filterCLStores() {
+  const val = document.getElementById('cl-store-input').value.toLowerCase();
+  const dd = document.getElementById('cl-store-dropdown');
+  const filtered = val ? STORES.filter(s => s.toLowerCase().includes(val)) : STORES;
+  dd.innerHTML = filtered.slice(0,80).map(s =>
+    `<div class="store-option${s===clStore?' selected':''}" onmousedown="selectCLStore('${s.replace(/'/g,"\'")}')">${s}</div>`
+  ).join('') + (filtered.length>80?`<div class="store-option" style="color:var(--muted);text-align:center;font-size:11px">แสดง 80 รายการแรก...</div>`:'');
+  dd.classList.add('show');
+}
+
+function openCLDropdown() {
+  filterCLStores();
+  document.getElementById('cl-store-dropdown').classList.add('show');
+}
+
+function closeCLDropdownDelay() {
+  setTimeout(() => document.getElementById('cl-store-dropdown').classList.remove('show'), 200);
+}
+
+function selectCLStore(store) {
+  clStore = store;
+  localStorage.setItem('inv_cl_store', store);
+  document.getElementById('cl-store-input').value = '';
+  document.getElementById('cl-store-badge-text').textContent = store;
+  document.getElementById('cl-store-badge-wrap').style.display = 'block';
+  document.getElementById('cl-store-search-wrap').style.display = 'none';
+  document.getElementById('cl-store-label').textContent = store;
+  document.getElementById('nav-store-badge').classList.add('show');
+  document.getElementById('nav-store-text').textContent = store;
+  document.getElementById('cl-topbar-sub').textContent = '📍 ' + store;
+  showCLContent();
+  for (let i=0; i<SHEETS.length; i++) renderCLSheet(i);
+  updateAllNavCounts();
+  // go to first sheet
+  showCLSheet(0);
+}
+
+function clearCLStore() {
+  clStore = '';
+  localStorage.removeItem('inv_cl_store');
+  document.getElementById('cl-store-badge-wrap').style.display = 'none';
+  document.getElementById('cl-store-search-wrap').style.display = 'flex';
+  document.getElementById('cl-store-label').textContent = '— เลือกสาขา —';
+  document.getElementById('nav-store-badge').classList.remove('show');
+  document.getElementById('cl-topbar-sub').textContent = 'เลือกสาขาก่อนเริ่มใช้งาน';
+  showNoCLStore();
+}
+
+function showCLContent() {
+  document.getElementById('cl-no-store').style.display = 'none';
+  document.querySelectorAll('.sheet-section').forEach((s,i) => { s.style.display = i===clSheet?'block':'none'; });
+}
+
+function showNoCLStore() {
+  document.getElementById('cl-no-store').style.display = 'block';
+  document.querySelectorAll('.sheet-section').forEach(s => s.style.display = 'none');
+  renderStorePicker();
+}
+
+function toggleCLSidebar() {
+  const sb = document.getElementById('cl-sidebar');
+  const ov = document.getElementById('cl-overlay');
+  const isOpen = sb.classList.contains('open');
+  if (isOpen) {
+    sb.classList.remove('open');
+    sb.classList.add('hidden');
+    ov.classList.remove('show');
+  } else {
+    sb.classList.add('open');
+    sb.classList.remove('hidden');
+    ov.classList.add('show');
+  }
+}
+
+function closeCLSidebar() {
+  document.getElementById('cl-sidebar').classList.remove('open');
+  document.getElementById('cl-sidebar').classList.add('hidden');
+  document.getElementById('cl-overlay').classList.remove('show');
+}
+
+
+// ============================================================
+// STORE PICKER
+// ============================================================
+function goHome() {
+  // Clear selected store and show picker
+  clStore = '';
+  localStorage.removeItem('inv_cl_store');
+  document.getElementById('cl-store-badge-wrap').style.display = 'none';
+  document.getElementById('cl-store-search-wrap').style.display = 'flex';
+  document.getElementById('cl-store-label').textContent = '— เลือกสาขา —';
+  document.getElementById('nav-store-badge').classList.remove('show');
+  document.getElementById('cl-topbar-sub').textContent = 'เลือกสาขาก่อนเริ่มใช้งาน';
+  document.getElementById('cl-topbar-title').textContent = 'ก่อนนับ (Pre-Count Preparation)';
+  // Make sure checklist page is active
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-checklist').classList.add('active');
+  document.getElementById('ntab-checklist').classList.add('active');
+  currentPage = 'checklist';
+  showNoCLStore();
+  if (window.innerWidth <= 768) closeCLSidebar();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function renderStorePicker(searchVal='') {
+  const container = document.getElementById('picker-regions');
+  if (!container) return;
+  const sl = searchVal.toLowerCase();
+  let anyResult = false;
+  const isSearch = sl.length > 0;
+
+  // Update hero if store selected
+  if (clStore) {
+    const el = document.getElementById('picker-cur-store');
+    const nm = document.getElementById('picker-cur-name');
+    if (el) el.style.display = 'block';
+    if (nm) nm.textContent = clStore;
+  }
+
+  let html = '';
+  for (const [rname, rd] of Object.entries(REGIONAL_DATA)) {
+    const filtered = isSearch ? rd.stores.filter(s => s.toLowerCase().includes(sl)) : rd.stores;
+    if (isSearch && !filtered.length) continue;
+    anyResult = true;
+
+    const rid = 'preg_' + rname.replace(/\s/g,'_');
+    const doneCount = filtered.filter(s => calcStorePct(s)===100).length;
+    const progCount = filtered.filter(s => { const p=calcStorePct(s); return p>0&&p<100; }).length;
+
+    const storeButtons = filtered.map(s => {
+      const pct = calcStorePct(s);
+      const isSelected = s === clStore;
+      const hasProg = pct > 0;
+      const pctLabel = pct > 0
+        ? `<span class="picker-store-pct" style="color:${pct===100?'var(--green)':'var(--accent)'}">${pct}%</span>`
+        : '';
+      const safeStore = s;
+      const dotColor = pct===100 ? 'var(--green)' : pct>0 ? 'var(--accent)' : '#cbd5e1';
+      const sCls = pct===100 ? 's-done' : pct>0 ? 's-progress' : 's-not';
+      return `<button class="picker-store-btn ${sCls}${isSelected?' selected':''}"
+        data-store="${s.replace(/"/g,'&quot;')}"
+        onclick="selectCLStore(this.dataset.store)">
+        <span class="picker-store-status-dot" style="background:${dotColor}"></span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s}</span>
+        ${pctLabel}
+      </button>`;
+    }).join('');
+
+    // Auto expand if searching or if this region has selected store
+    const hasSelected = rd.stores.includes(clStore);
+    const expanded = isSearch || hasSelected;
+
+    html += `
+    <div class="picker-region-wrap" id="${rid}" style="margin-bottom:12px">
+      <div class="picker-region-header" style="--rc:${rd.color};cursor:pointer" onclick="toggleRegion('${rid}')">
+        <span class="picker-region-icon">${rd.icon}</span>
+        <div style="flex:1">
+          <div class="picker-region-name">${rname}</div>
+          <div class="picker-region-sub">${rd.area}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          ${doneCount>0?`<span style="font-size:11px;color:var(--green);font-weight:600">✓${doneCount}</span>`:''}
+          ${progCount>0?`<span style="font-size:11px;color:var(--accent);font-weight:600">⏳${progCount}</span>`:''}
+          <span class="picker-region-count">${filtered.length} สาขา</span>
+          <span id="${rid}_arrow" style="font-size:13px;color:var(--muted);transition:transform 0.25s;display:inline-block;transform:${expanded?'rotate(0deg)':'rotate(-90deg)'}">▼</span>
+        </div>
+      </div>
+      <div id="${rid}_body" style="display:${expanded?'grid':'none'};grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;padding:4px 0 8px 0">
+        ${storeButtons}
+      </div>
+    </div>`;
+  }
+
+  if (!anyResult) html = `<div class="picker-no-result">🔍 ไม่พบสาขา "${searchVal}"</div>`;
+  container.innerHTML = html;
+}
+
+function toggleRegion(rid) {
+  const body = document.getElementById(rid + '_body');
+  const arrow = document.getElementById(rid + '_arrow');
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'grid';
+  if (arrow) arrow.style.transform = isOpen ? 'rotate(-90deg)' : 'rotate(0deg)';
+}
+
+
+
+// Hook search input to also filter picker
+const origFilterCL = filterCLStores;
+
+
+
+// ============================================================
+// EXPORT FUNCTIONS
+// ============================================================
+
+function exportExcel() {
+  if (!clStore) { alert('กรุณาเลือกสาขาก่อนครับ'); return; }
+
+  const sheetNames = ['ก่อนนับ (Preparation)', 'Pre-Count คืนที่1', 'Pre-Count คืนที่2', 'Pre-Count คืนที่3', 'Pre-Count คืนที่4', 'Regular Count', 'Recheck & Final'];
+  const statusLabel = { 'done': '✓ เรียบร้อย', 'pending': '⏳ กำลังดำเนินการ', 'fail': '✗ ยังไม่เรียบร้อย', '': '— ยังไม่ระบุ' };
+
+  let csvContent = '﻿'; // BOM for Thai
+  csvContent += `INV Audit Checklist — ${clStore}\n`;
+  csvContent += `Export วันที่: ${new Date().toLocaleDateString('th-TH', {year:'numeric',month:'long',day:'numeric'})} เวลา ${new Date().toLocaleTimeString('th-TH')}\n\n`;
+
+  // Sheet 0: Preparation
+  csvContent += buildSheetCSV(0, 'ก่อนนับ (Pre-Count Preparation)', '');
+  csvContent += '\n';
+
+  // Sheet 1: Pre-Count (4 nights)
+  for (let n = 1; n <= 4; n++) {
+    csvContent += buildSheetCSV(1, `Pre-Count คืนที่ ${n}`, n);
+    csvContent += '\n';
+  }
+
+  // Sheet 2: Regular Count
+  csvContent += buildSheetCSV(2, 'Regular Count', '');
+  csvContent += '\n';
+
+  // Sheet 3: Recheck
+  csvContent += buildSheetCSV(3, 'Recheck & Final Report', '');
+
+  // Download
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `INV_Checklist_${clStore.replace(/[^a-zA-Z0-9]/g,'_')}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildSheetCSV(si, sheetName, night) {
+  const statusLabel = { 'done': 'เรียบร้อย', 'pending': 'กำลังดำเนินการ', 'fail': 'ยังไม่เรียบร้อย', '': 'ยังไม่ระบุ' };
+  let csv = `=== ${sheetName} ===\n`;
+  csv += 'ลำดับ,รหัส,หัวข้อ,ผู้รับผิดชอบ,กำหนดเวลา,สถานะ,หมายเหตุ\n';
+
+  let cat = '';
+  let rowNum = 1;
+  for (const d of SHEETS[si].data) {
+    if (d.type === 'cat') { cat = d.name; continue; }
+    const s = getCLStatus(si, d.no, night) || '';
+    const note = getItemNote(si, d.no, night) || '';
+    const sl = statusLabel[s] || 'ยังไม่ระบุ';
+    const title = d.title.replace(/,/g, '，');
+    const noteClean = note.replace(/,/g, '，').replace(/\n/g, ' ');
+    csv += `${rowNum},${d.no},"${title}","${d.owner}","${d.deadline}","${sl}","${noteClean}"\n`;
+    rowNum++;
+  }
+  return csv;
+}
+
+function exportPrint() {
+  if (!clStore) { alert('กรุณาเลือกสาขาก่อนครับ'); return; }
+  // Add print header
+  const printHdr = document.createElement('div');
+  printHdr.className = 'print-header';
+  printHdr.id = 'print-header-temp';
+  printHdr.innerHTML = `
+    <div style="text-align:center;padding:16px 0;border-bottom:2px solid #0f2744;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#f59e0b;text-transform:uppercase">INV Audit Checklist</div>
+      <div style="font-size:20px;font-weight:700;color:#0f2744;margin:4px 0">สาขา: ${clStore}</div>
+      <div style="font-size:12px;color:#64748b">พิมพ์เมื่อ: ${new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})} เวลา ${new Date().toLocaleTimeString('th-TH')}</div>
+    </div>`;
+  const content = document.querySelector('.cl-content');
+  content.insertBefore(printHdr, content.firstChild);
+  window.print();
+  setTimeout(() => {
+    const hdr = document.getElementById('print-header-temp');
+    if (hdr) hdr.remove();
+  }, 1000);
+}
+
+function exportRegionExcel() {
+  if (!curRegion) return;
+  const rd = REGIONAL_DATA[curRegion];
+  const statusLabel = { 'done': 'เสร็จแล้ว', 'progress': 'กำลังดำเนินการ', 'not': 'ยังไม่เริ่ม' };
+
+  let csv = '\uFEFF';
+  csv += `Regional Progress Report — ${curRegion}\n`;
+  csv += `Export วันที่: ${new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})} เวลา ${new Date().toLocaleTimeString('th-TH')}\n\n`;
+  csv += 'ลำดับ,สาขา,ความคืบหน้า (%),ขั้นตอนล่าสุด,สถานะ\n';
+
+  rd.stores.forEach((s, i) => {
+    const pct = calcStorePct(s);
+    const phase = getStorePhase(s);
+    const st = pct===100 ? 'เสร็จแล้ว' : pct>0 ? 'กำลังดำเนินการ' : 'ยังไม่เริ่ม';
+    csv += `${i+1},"${s}",${pct}%,"${phase}","${st}"\n`;
+  });
+
+  // Summary
+  const stats = getRegionStats(curRegion);
+  csv += `\nสรุป,,,\n`;
+  csv += `เสร็จแล้ว,${stats.done} สาขา,,\n`;
+  csv += `กำลังดำเนินการ,${stats.inprog} สาขา,,\n`;
+  csv += `ยังไม่เริ่ม,${stats.notStarted} สาขา,,\n`;
+  csv += `ความคืบหน้ารวม,${stats.avgPct}%,,\n`;
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${curRegion.replace(/\s/g,'_')}_Progress_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+function updateMBN(page) {
+  document.querySelectorAll('.mbn-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById('mbn-' + page);
+  if (el) el.classList.add('active');
+  // Hide menu button when not on checklist
+  const menuBtn = document.getElementById('mbn-menu');
+  if (menuBtn) menuBtn.style.display = page === 'checklist' ? 'flex' : 'none';
+}
+
+// Init mobile bottom nav
+if (window.innerWidth <= 768) {
+  updateMBN('dashboard');
+}
+
+// ============================================================
+// INIT
+// ============================================================
+// Restore saved store
+if (clStore) {
+  document.getElementById('cl-store-badge-text').textContent = clStore;
+  document.getElementById('cl-store-badge-wrap').style.display = 'block';
+  document.getElementById('cl-store-search-wrap').style.display = 'none';
+  document.getElementById('cl-store-label').textContent = clStore;
+  document.getElementById('nav-store-badge').classList.add('show');
+  document.getElementById('nav-store-text').textContent = clStore;
+}
+
+// Render all sheets
+for (let i=0; i<SHEETS.length; i++) renderCLSheet(i);
+updateAllNavCounts();
+if (clStore) { showCLContent(); showCLSheet(0); }
+else showNoCLStore();
+
+// Hook store search input to also update picker
+const _clStoreInput = document.getElementById('cl-store-input');
+if (_clStoreInput) {
+  const _origInput = _clStoreInput.oninput;
+  _clStoreInput.addEventListener('input', function() {
+    const val = this.value;
+    renderStorePicker(val);
+  });
+}
+
+// Hide sidebar on mobile by default
+if (window.innerWidth <= 768) {
+  const sb = document.getElementById('cl-sidebar');
+  if (sb) { sb.classList.add('hidden'); sb.classList.remove('open'); }
+}
+
+// Render dashboard
+renderDashboard();
+document.getElementById('last-update').textContent = 'อัปเดต ' + new Date().toLocaleTimeString('th-TH');
+
+// Auto-refresh dashboard every 30s
+setInterval(() => {
+  if (currentPage === 'dashboard' || document.getElementById('page-dashboard').classList.contains('active')) {
+    renderDashboard();
+    document.getElementById('last-update').textContent = 'อัปเดต ' + new Date().toLocaleTimeString('th-TH');
+  }
+}, 30000);
+
+// Mobile sidebar toggle
+const _hamBtn = document.querySelector('.ham-btn');
+if (_hamBtn) {
+  _hamBtn.addEventListener('click', () => {
+    if (currentPage === 'checklist') toggleCLSidebar();
+  });
+}
+// Show ham button on checklist page only  
+function updateHamVisibility() {
+  const hamBtn = document.querySelector('.ham-btn');
+  if (!hamBtn) return;
+  if (window.innerWidth <= 768) {
+    hamBtn.style.display = currentPage==='checklist' ? 'flex' : 'none';
+  } else {
+    hamBtn.style.display = 'none';
+  }
+}
+</script>
+
+<!-- MOBILE BOTTOM NAV -->
+<div class="mobile-bottom-nav" id="mobile-bottom-nav">
+  <div class="mbn-items">
+    <div class="mbn-item active" id="mbn-dashboard" onclick="showPage('dashboard');updateMBN('dashboard')">
+      <span class="mbn-icon">📊</span>
+      <span>Dashboard</span>
+    </div>
+    <div class="mbn-item" id="mbn-checklist" onclick="showPage('checklist');updateMBN('checklist')">
+      <span class="mbn-icon">✅</span>
+      <span>Checklist</span>
+    </div>
+    <div class="mbn-item" id="mbn-menu" onclick="toggleCLSidebar()">
+      <span class="mbn-icon">☰</span>
+      <span>เมนู</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
