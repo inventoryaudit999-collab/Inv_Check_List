@@ -1,8 +1,10 @@
 # 📋 INV Audit – Dashboard & Checklist
 
-ระบบติดตามการตรวจนับสินค้า (Inventory) ของ Makro ทั้ง 4 Regional พร้อม **Firebase Realtime Sync** ซึ่งทำให้:
+ระบบติดตามการตรวจนับสินค้า (Inventory) ของ Makro ทั้ง 4 Regional พร้อม **Firebase Realtime Sync v2** ซึ่งทำให้:
 
-- ✅ **ทีมหลายคนใช้งานพร้อมกันได้** — แก้ที่สาขาไหน Dashboard ของทุกคนเห็นทันที (Realtime)
+- ✅ **ทีมหลายคนใช้งานพร้อมกันได้** — แก้ที่สาขาไหน Dashboard ของทุกคนเห็น**ภายใน 1 วินาที** (Realtime จริง)
+- ✅ **Per-store Instant Listener** — เครื่องที่ดูสาขาเดียวกันจะอัปเดตทันทีโดยไม่ต้อง refresh
+- ✅ **Write Confirmation** — จุด 💚 เขียวกระพริบ = บันทึกสำเร็จ / 🔵 น้ำเงินกระพริบ = ได้รับข้อมูลใหม่
 - ✅ **ใช้ได้ทุกอุปกรณ์** — iOS / Android / PC / Tablet เปิดเว็บเดียวกัน เห็นข้อมูลเดียวกัน
 - ✅ **Offline ก็ทำงานได้** — ใช้ localStorage เป็น cache, พอ online ส่งขึ้น Firebase ให้อัตโนมัติ
 - ✅ **ไม่ต้องล็อกอิน** — เปิดเว็บ → เลือกสาขา → ใช้ได้เลย
@@ -125,21 +127,72 @@
 
 ## 🛠️ Trouble Shooting
 
+### 🔥 ข้อมูลไม่ sync ข้ามเครื่อง / กดบันทึกแล้วเครื่องอื่นไม่เห็น
+
+นี่คือปัญหาที่เจอบ่อยที่สุด — **99% เกิดจาก Firebase Rules ยังไม่ Publish หรือยังเป็นโหมด Test/Locked**
+
+**วิธีตรวจสอบทีละขั้น:**
+
+#### ✅ Step 1: เปิด Console (F12) ดู Error
+- กด **F12** ในเบราว์เซอร์ → แท็บ **Console**
+- ถ้าเห็นข้อความสีแดง `[FB write FAIL]` หรือ `permission_denied` → **เป็นปัญหา Rules แน่นอน**
+- ในหน้าเดียวกัน พิมพ์ `fbDebug()` แล้วกด Enter จะเห็น:
+  ```
+  { fbReady: true, writeOk: 0, writeFail: 12, ... }
+  ```
+  ถ้า **writeFail > 0** = เขียนไม่ได้ → ปัญหา Rules
+  ถ้า **writeOk เพิ่มขึ้นทุกครั้งที่กด** = เขียนสำเร็จ ✓
+
+#### ✅ Step 2: ตรวจ Rules ใน Firebase Console
+1. เข้า https://console.firebase.google.com/ → project **inv-checklist**
+2. **Build → Realtime Database → Rules**
+3. **ต้องเห็น Rules แบบนี้** (ถ้ายังเป็น `".read": false` หรือ `"auth != null"` คือยัง block อยู่):
+   ```json
+   {
+     "rules": {
+       "checklists": {
+         ".read": true,
+         ".write": true
+       }
+     }
+   }
+   ```
+4. กด **Publish** สีฟ้ามุมขวาบน
+5. รอ 5 วินาที → กด F5 ที่หน้าเว็บใหม่ → ทดสอบใหม่
+
+#### ✅ Step 3: ทดสอบ Real-time
+- เปิดเว็บใน **2 เบราว์เซอร์/อุปกรณ์**
+- เลือก **สาขาเดียวกัน** ทั้ง 2 เครื่อง
+- เครื่องที่ 1 กดสถานะ → จุดเขียวกระพริบ 💚 (เขียนสำเร็จ)
+- เครื่องที่ 2 ควรเห็นจุด **น้ำเงินกระพริบ** 🔵 และข้อมูลอัปเดต **ภายใน 1 วินาที**
+- ถ้าจุดน้ำเงินไม่กระพริบ = Listener ไม่ได้รับ event → ปัญหา Rules อ่านไม่ได้
+
+#### ✅ Step 4: ดู Firebase Console ว่ามีข้อมูลจริง
+1. Firebase Console → Realtime Database → แท็บ **Data**
+2. ควรเห็น node `checklists/{ชื่อสาขา}/...` มีข้อมูลเข้ามาเรื่อยๆ ตอนกดบันทึก
+3. ถ้า **ไม่มี node `checklists` เลย** = ไม่มี Write เลย → ปัญหา Rules
+
+### 🎨 ความหมายของจุดสี (สำหรับ Debug)
+
+| สี | ความหมาย |
+|----|---------|
+| 🟢 เขียวคงที่ | เชื่อมต่อ Firebase สำเร็จ |
+| 💚 เขียวกระพริบสั้น | **Write สำเร็จ** — ข้อมูลถูกส่งขึ้น Firebase แล้ว |
+| 🔵 น้ำเงินกระพริบ | **Incoming update** — รับข้อมูลใหม่จากเครื่องอื่น |
+| 🟡 เหลืองกระพริบ | กำลังเชื่อมต่อ |
+| 🔴 แดงคงที่ + ⚠️ | **Write/Read ล้มเหลว** → ปัญหา Rules แน่ |
+
 ### ❌ Sync Badge แสดง "ออฟไลน์" ตลอด
 
-**สาเหตุ:** Firebase Rules ยังไม่ Publish หรือ Database URL ไม่ตรง
+**สาเหตุ:** ไม่มี Internet, Firebase URL ผิด, หรือ JavaScript ถูก block
 
 **แก้:**
-1. ตรวจสอบใน Firebase Console → Realtime Database → Rules
-2. แน่ใจว่ามี `"checklists": { ".read": true, ".write": true }` และกด Publish แล้ว
-3. กด F12 เปิด Console ใน browser → ดู error ที่ขึ้นต้นด้วย `[Firebase`
-
-### ❌ ข้อมูลไม่อัปเดตข้าม browser
-
-**แก้:**
-- เช็คว่า Sync Badge เป็นสีเขียว 🟢 ทั้ง 2 browser
-- ลอง **Hard Refresh** (Ctrl+Shift+R หรือ Cmd+Shift+R)
-- ตรวจสอบ Firebase Console → Realtime Database → Data → ควรเห็น node `checklists/` มีข้อมูล
+1. ตรวจ Internet ก่อน
+2. ตรวจสอบ Console (F12) ว่ามี error อะไร
+3. ตรวจว่า URL ใน `index.html` ตรงกับใน Firebase:
+   ```
+   https://inv-checklist-default-rtdb.asia-southeast1.firebasedatabase.app
+   ```
 
 ### ❌ GitHub Pages ขึ้น 404
 
@@ -147,6 +200,12 @@
 - รอเพิ่ม 5 นาที (บางครั้ง GitHub ใช้เวลา deploy)
 - ตรวจ Settings → Pages → ต้องเห็นข้อความเขียว "Your site is live at ..."
 - แน่ใจว่าชื่อไฟล์เป็น `index.html` ตัวพิมพ์เล็กทั้งหมด (case-sensitive)
+
+### ❌ Console เห็น "Permission denied" ตอน Write
+
+**สาเหตุ:** Rules block การเขียน
+
+**แก้:** ทำตาม **Step 2** ด้านบน — Publish Rules ใหม่
 
 ---
 

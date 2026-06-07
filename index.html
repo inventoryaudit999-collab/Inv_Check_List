@@ -850,7 +850,7 @@ body { font-family: 'Sarabun', sans-serif; background: var(--surface); color: va
 
 <script>
 // ============================================================
-// 🔥 FIREBASE REALTIME DATABASE SYNC
+// 🔥 FIREBASE REALTIME DATABASE SYNC  (v2 — instant per-store listener)
 // ============================================================
 const firebaseConfig = {
   apiKey: "AIzaSyD-9vKBP9rnQQJbPGmLhCWVtr0WOyVPSpo",
@@ -865,7 +865,8 @@ const firebaseConfig = {
 let fbDB = null;
 let fbReady = false;
 let fbInitialLoad = false;
-let fbWriteQueue = []; // Queue ของ writes ที่ค้างขณะ offline
+let fbWriteQueue = [];                  // Queue ของ writes ที่ค้างขณะ offline
+let fbWriteOk = 0, fbWriteFail = 0;     // Counter สำหรับ debug
 
 try {
   firebase.initializeApp(firebaseConfig);
@@ -875,59 +876,87 @@ try {
   console.warn('[Firebase] init failed:', e);
 }
 
-// แปลง localStorage key ให้เป็น Firebase path
-// key: inv_{store}_{sheet}_{no}[_n{night}][_note]
+// === Native localStorage methods (bypassed hook, for use ภายใน listener) ===
+const _lsSet    = Object.getPrototypeOf(localStorage).setItem.bind(localStorage);
+const _lsRemove = Object.getPrototypeOf(localStorage).removeItem.bind(localStorage);
+
+// === Key parsing ===
+// inv_{store}_{sheet}_{no}[_n{night}][_note]
 function parseInvKey(key) {
-  // ยอมรับ Thai char, space, dash, parentheses ในชื่อสาขา
   const m = key.match(/^inv_(.+?)_(\d+)_([A-Z0-9\-]+)(?:_n(\d+))?(_note)?$/);
   if (!m) return null;
   return { store: m[1], sheet: m[2], no: m[3], night: m[4] || '', isNote: !!m[5] };
 }
 
-// แปลง store name ให้ปลอดภัยสำหรับ Firebase key (เลี่ยงอักขระต้องห้าม . # $ [ ] /)
+// Firebase-safe key (เลี่ยง . # $ [ ] /)
 function fbSafeKey(s) {
   return String(s).replace(/[.#$\[\]\/]/g, '_');
 }
 
-// Sync 1 ค่าขึ้น Firebase
+// === Visual feedback: Flash sync dot ===
+function flashSyncDot(color, duration) {
+  const dot = document.getElementById('sync-dot');
+  if (!dot) return;
+  const origBg = dot.style.background;
+  dot.style.background = color;
+  dot.style.boxShadow = `0 0 10px ${color}`;
+  setTimeout(() => {
+    dot.style.background = origBg;
+    dot.style.boxShadow = '';
+  }, duration || 350);
+}
+
+// === Sync 1 ค่าขึ้น Firebase พร้อม confirmation ===
 function fbSyncOne(key, val) {
   const p = parseInvKey(key);
-  if (!p) return; // ไม่ใช่ checklist key (เช่น inv_cl_store)
+  if (!p) return;
   const path = `checklists/${fbSafeKey(p.store)}/${p.sheet}_${p.no}${p.night?'_n'+p.night:''}/${p.isNote?'note':'status'}`;
 
   if (!fbReady || !fbDB) {
-    // Queue ไว้ส่งทีหลังเมื่อ online
-    fbWriteQueue.push({ path, val });
+    fbWriteQueue.push({ path, val });  // Queue ไว้ส่งทีหลัง
     return;
   }
-  try {
-    if (val == null || val === '') {
-      fbDB.ref(path).remove();
-    } else {
-      fbDB.ref(path).set(val);
-    }
-  } catch(e) {
-    console.warn('[fbSyncOne]', e);
-  }
+
+  const promise = (val == null || val === '')
+    ? fbDB.ref(path).remove()
+    : fbDB.ref(path).set(val);
+
+  promise.then(() => {
+    fbWriteOk++;
+    flashSyncDot('#22c55e');  // 💚 เขียวกระพริบสั้นๆ
+  }).catch(err => {
+    fbWriteFail++;
+    console.error('[FB write FAIL]', path, '→', err.message);
+    setSyncStatus('offline', '⚠️ เขียนไม่ได้ — เช็ค Firebase Rules');
+    flashSyncDot('#ef4444', 600);
+  });
 }
 
-// Hook localStorage.setItem / removeItem ให้ sync ขึ้น Firebase อัตโนมัติ
-// (วิธีนี้ทำให้ฟังก์ชันเดิมไม่ต้องแก้เลย แค่ทำงาน sync เพิ่มเอง)
+// === Hook localStorage.setItem/removeItem ===
 (function hookLocalStorage() {
   const origSet = localStorage.setItem.bind(localStorage);
   const origRemove = localStorage.removeItem.bind(localStorage);
 
   localStorage.setItem = function(k, v) {
     origSet(k, v);
-    if (k && k.startsWith('inv_') && k !== 'inv_cl_store') fbSyncOne(k, v);
+    if (k === 'inv_cl_store') {
+      // สาขาเปลี่ยน → ย้าย instant listener ไปสาขาใหม่
+      attachStoreInstantListener(v);
+    } else if (k && k.startsWith('inv_')) {
+      fbSyncOne(k, v);
+    }
   };
   localStorage.removeItem = function(k) {
     origRemove(k);
-    if (k && k.startsWith('inv_') && k !== 'inv_cl_store') fbSyncOne(k, '');
+    if (k === 'inv_cl_store') {
+      attachStoreInstantListener(null);
+    } else if (k && k.startsWith('inv_')) {
+      fbSyncOne(k, '');
+    }
   };
 })();
 
-// อัปเดต UI สถานะ sync
+// === UI: Sync badge ===
 function setSyncStatus(state, msg) {
   const dot = document.getElementById('sync-dot');
   const txt = document.getElementById('sync-text');
@@ -947,23 +976,105 @@ function setSyncStatus(state, msg) {
   txt.textContent = msg;
 }
 
-// โหลดข้อมูลทั้งหมดจาก Firebase ครั้งแรก + Listen realtime changes
+// === Apply 1 item update → localStorage (ใช้ _lsSet/_lsRemove เพื่อไม่ trigger hook กลับ) ===
+function applyItemUpdate(store, itemKey, itemData) {
+  const m = itemKey.match(/^(\d+)_(.+?)(?:_n(\d+))?$/);
+  if (!m) return null;
+  const sheetIdx = parseInt(m[1]);
+  const no = m[2];
+  const night = m[3] || '';
+  const lsKey = `inv_${store}_${sheetIdx}_${no}${night?'_n'+night:''}`;
+
+  if (itemData && itemData.status) _lsSet(lsKey, itemData.status);
+  else _lsRemove(lsKey);
+  if (itemData && itemData.note) _lsSet(lsKey + '_note', itemData.note);
+  else _lsRemove(lsKey + '_note');
+  return sheetIdx;
+}
+
+// === Re-render ทั้งหน้า แบบ debounced (สำหรับ bulk load จาก root listener) ===
+let _renderTimer = null;
+function scheduleFullRender() {
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(() => {
+    if (typeof renderDashboard === 'function') renderDashboard();
+    if (typeof clStore !== 'undefined' && clStore && typeof renderCLSheet === 'function') {
+      for (let i = 0; i < SHEETS.length; i++) renderCLSheet(i);
+    }
+    const picker = document.getElementById('cl-no-store');
+    if (picker && picker.style.display !== 'none' && typeof renderStorePicker === 'function') {
+      renderStorePicker();
+    }
+    const lu = document.getElementById('last-update');
+    if (lu) lu.textContent = '🔄 ' + new Date().toLocaleTimeString('th-TH');
+  }, 100);
+}
+
+// ============================================================
+// 🎯 PER-STORE INSTANT LISTENER
+// ฟัง child_added / child_changed / child_removed บนสาขาที่เลือกปัจจุบัน
+// ทำให้การอัปเดตจากเครื่องอื่น "เห็นทันที" ไม่ต้องรอ debounce
+// ============================================================
+let _instantRef = null;
+let _instantStore = null;
+
+function attachStoreInstantListener(store) {
+  // ถอด listener เก่าทิ้ง
+  if (_instantRef) {
+    _instantRef.off();
+    _instantRef = null;
+    _instantStore = null;
+  }
+  if (!store || !fbDB) return;
+
+  _instantStore = store;
+  _instantRef = fbDB.ref(`checklists/${fbSafeKey(store)}`);
+
+  const onItem = (snap, isRemoved) => {
+    const itemKey = snap.key;
+    const itemData = isRemoved ? null : snap.val();
+    const sheetIdx = applyItemUpdate(store, itemKey, itemData);
+
+    // 🚀 Re-render เฉพาะ sheet ที่เกี่ยวข้อง — INSTANT
+    if (typeof clStore !== 'undefined' && clStore === store && typeof renderCLSheet === 'function' && sheetIdx != null) {
+      renderCLSheet(sheetIdx);
+      // อัปเดต progress bar + dashboard เบาๆ
+      if (typeof updateCLProgress === 'function') updateCLProgress();
+    }
+
+    // 🔵 น้ำเงินกระพริบสั้นๆ = "incoming update"
+    flashSyncDot('#3b82f6');
+    const lu = document.getElementById('last-update');
+    if (lu) lu.textContent = '🔄 ' + new Date().toLocaleTimeString('th-TH');
+  };
+
+  _instantRef.on('child_added',   snap => onItem(snap, false));
+  _instantRef.on('child_changed', snap => onItem(snap, false));
+  _instantRef.on('child_removed', snap => onItem(snap, true));
+
+  console.log('[FB] Instant listener attached to store:', store);
+}
+
+// ============================================================
+// 🚀 INIT
+// ============================================================
 function initFirebaseSync() {
   if (!fbDB) { setSyncStatus('offline', 'ออฟไลน์'); return; }
   setSyncStatus('connecting', 'กำลังเชื่อมต่อ...');
 
-  // Detect online/offline ผ่าน .info/connected
+  // ─── Connection state ───
   fbDB.ref('.info/connected').on('value', snap => {
     if (snap.val() === true) {
       fbReady = true;
       setSyncStatus('online', 'ออนไลน์');
-      // ส่ง queue ที่ค้างไว้
+      // Flush queue
       while (fbWriteQueue.length) {
         const { path, val } = fbWriteQueue.shift();
-        try {
-          if (val == null || val === '') fbDB.ref(path).remove();
-          else fbDB.ref(path).set(val);
-        } catch(e) {}
+        const op = (val == null || val === '') ? fbDB.ref(path).remove() : fbDB.ref(path).set(val);
+        op.catch(e => {
+          console.error('[FB queued write fail]', path, e.message);
+          setSyncStatus('offline', '⚠️ เขียนไม่ได้ — เช็ค Firebase Rules');
+        });
       }
     } else {
       fbReady = false;
@@ -971,70 +1082,46 @@ function initFirebaseSync() {
     }
   });
 
-  // Listen การเปลี่ยนแปลงทั้งหมด → update localStorage cache → re-render
+  // ─── ROOT listener: bulk load + dashboard refresh ───
   fbDB.ref('checklists').on('value', snapshot => {
     const data = snapshot.val() || {};
-    let applied = 0;
-
-    // ลบ keys เก่าที่ไม่อยู่ใน Firebase แล้ว (ทำเฉพาะตอน initial load)
-    if (!fbInitialLoad) {
-      const lsKeysToCheck = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('inv_') && k !== 'inv_cl_store') lsKeysToCheck.push(k);
-      }
-      // ไม่ลบเพื่อความปลอดภัย — แค่ merge ทับด้วยข้อมูลจาก Firebase
-    }
-
-    // Apply Firebase data → localStorage (ใช้ original setItem ตรงๆ เพื่อไม่ให้ trigger sync กลับ)
-    const origSet = Object.getPrototypeOf(localStorage).setItem.bind(localStorage);
-    const origRemove = Object.getPrototypeOf(localStorage).removeItem.bind(localStorage);
-
+    let count = 0;
     for (const [store, items] of Object.entries(data)) {
       if (!items || typeof items !== 'object') continue;
       for (const [itemKey, itemData] of Object.entries(items)) {
         if (!itemData || typeof itemData !== 'object') continue;
-        // itemKey: "0_S1" หรือ "1_P-S1_n1"
-        const m = itemKey.match(/^(\d+)_(.+?)(?:_n(\d+))?$/);
-        if (!m) continue;
-        const sheetIdx = m[1];
-        const no = m[2];
-        const night = m[3] || '';
-        const lsKey = `inv_${store}_${sheetIdx}_${no}${night?'_n'+night:''}`;
-
-        if (itemData.status) origSet(lsKey, itemData.status);
-        else origRemove(lsKey);
-
-        if (itemData.note) origSet(lsKey + '_note', itemData.note);
-        else origRemove(lsKey + '_note');
-        applied++;
+        applyItemUpdate(store, itemKey, itemData);
+        count++;
       }
     }
-
     fbInitialLoad = true;
-
-    // Re-render หน้าจอแบบ debounce
-    clearTimeout(window._fbRenderTimer);
-    window._fbRenderTimer = setTimeout(() => {
-      if (typeof renderDashboard === 'function') renderDashboard();
-      if (typeof clStore !== 'undefined' && clStore && typeof renderCLSheet === 'function') {
-        for (let i = 0; i < SHEETS.length; i++) renderCLSheet(i);
-      }
-      if (typeof renderStorePicker === 'function' &&
-          document.getElementById('cl-no-store') &&
-          document.getElementById('cl-no-store').style.display !== 'none') {
-        renderStorePicker();
-      }
-      const lu = document.getElementById('last-update');
-      if (lu) lu.textContent = '🔄 ' + new Date().toLocaleTimeString('th-TH');
-    }, 250);
+    scheduleFullRender();
+    if (!window._fbLoggedFirstLoad) {
+      console.log('[FB] First sync — stores:', Object.keys(data).length, ' items:', count);
+      window._fbLoggedFirstLoad = true;
+    }
   }, err => {
-    console.error('[Firebase listen error]', err);
-    setSyncStatus('offline', 'เชื่อมต่อล้มเหลว');
+    console.error('[FB root listen error]', err);
+    setSyncStatus('offline', '⚠️ อ่านไม่ได้ — ตรวจ Firebase Rules');
+  });
+
+  // ─── Attach instant listener ไปสาขาที่เลือกอยู่แล้ว ───
+  const initStore = localStorage.getItem('inv_cl_store') || '';
+  if (initStore) attachStoreInstantListener(initStore);
+
+  // ─── Debug helpers (เปิด console แล้วพิมพ์ fbDebug() ดูได้) ───
+  window.fbDebug = () => ({
+    fbReady,
+    fbInitialLoad,
+    writeOk: fbWriteOk,
+    writeFail: fbWriteFail,
+    queueLength: fbWriteQueue.length,
+    instantStore: _instantStore,
+    databaseURL: firebaseConfig.databaseURL
   });
 }
 
-// เริ่ม sync ทันทีเมื่อ DOM พร้อม
+// Start sync
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initFirebaseSync);
 } else {
