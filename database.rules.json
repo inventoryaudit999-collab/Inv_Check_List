@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "checklists": {
+      ".read": true,
+      ".write": true,
+      "$store": {
+        ".indexOn": [".value"]
+      }
+    }
+  }
+}
