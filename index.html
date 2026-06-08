@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>INV Audit – Dashboard & Checklist</title>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Prompt:wght@500;600;700&display=swap" rel="stylesheet">
 
 <!-- ===== FIREBASE SDK (Realtime Database) ===== -->
@@ -1135,6 +1138,90 @@ if (document.readyState === 'loading') {
 // ============================================================
 const STORES = ["001 - Lat Phrao", "002 - Chaeng Watthana", "003 - Srinakarin", "004 - Bangbon", "005 - Chon Buri", "006 - Chiang Mai", "007 - Nakhon Ratchasima", "008 - Rangsit", "009 - Hat Yai", "010 - Udon Thani", "011 - Phitsanulok", "012 - Khon Kaen", "013 - Surat Thani", "014 - Ubon Ratchathani", "015 - Rayong", "016 - Nakhon Sawan", "017 - Charansanitwong", "018 - Sathon", "019 - Nakhon Pathom", "020 - Surin", "021 - Samsen", "022 - Nakhon Si Thammarat", "023 - Chiang Rai", "024 - Sakon Nakhon", "025 - Suphan Buri", "026 - Chanthaburi", "027 - Phuket", "028 - Roi Et", "029 - Trang", "030 - Sa Kaeo", "031 - Koh Samui", "032 - Buri Ram", "033 - Si Sa Ket", "034 - Lamphun", "035 - Krabi", "036 - Phetchaburi", "037 - Chaiyaphum", "038 - Saraburi", "039 - Pranburi", "040 - Chachoengsao", "041 - Chiang Mai 2_Hang Dong", "042 - Ram Inthra", "043 - Chumphon", "044 - Pattaya", "045 - Kamphaeng Phet", "046 - Kanchanaburi", "047 - Lop Buri", "048 - Nong Khai", "049 - Ratchaburi", "050 - Mae Rim", "051 - Ayutthaya", "052 - Lampang", "053 - Hua Hin", "054 - Khlong Luang", "055 - Loei", "056 - Phetchabun", "057 - Bang Phli", "058 - Mukdahan", "059 - Satun", "060 - Trat", "061 - Chum Phae", "062 - Rawai", "063 - Nakhon Phanom", "064 - Koh Pha Ngan", "065 - Bueng Kan", "066 - North Pattaya", "067 - Mae Sai", "068 - Salaya", "069 - Phatthalung", "070 - Sukhothai", "071 - Patong", "072 - Samut Sakhon", "073 - Mae Sot", "074 - Pak Chong", "075 - Thalang", "076 - Ranong", "077 - Lamai", "078 - Kanlapaphruek", "079 - Yasothon", "080 - Maha Sarakham", "081 - Fang", "082 - Nakhon Nayok", "083 - Nakhon In", "084 - Ban Phe", "085 - Thung Song", "086 - Srinakarin 2", "087 - Phayao", "089 - Phitsanulok 2", "091 - F-Talad Mueang Mai (M-St.6)", "095 - F-Si Racha (M-St.109)", "096 - Town In Town", "100 - Phrae", "101 - Koh Chang", "102 - Nakhon Ratchasima 2", "103 - Nan", "104 - Ao Nang", "105 - Karon", "106 - Warin Chamrap", "107 - Nong Bua Lam Phu", "108 - Nong Chok", "109 - Laem Chabang", "110 - Prachuap Khiri Khan", "111 - Phet Kasem", "113 - Wang Hin", "114 - Sing Buri", "115 - Bang Bua Thong", "116 - Kalasin", "117 - Udom Suk", "118 - Ramkhamhaeng (Sammakorn)", "119 - Phichit", "120 - Pathum Thani", "121 - Bodindecha", "122 - Pracha Uthit", "123 - Sukhumvit 71", "124 - Nawamin 70", "125 - Cha-am", "126 - On Nut", "127 - Suksawat", "128 - Kabin Buri", "129 - Lat Krabang", "130 - Na Thong Charoen", "131 - Bo Win", "132 - Sattahip", "133 - Ramkhamhaeng 24", "134 - Amata Nakorn", "135 - Bang Kho Laem", "136 - Khon Kaen 2", "137 - Wongsakorn 2", "138 - Meng Jai", "139 - Sukhumvit 22", "140 - Chan Road", "141 - Lam Luk Ka", "142 - Phraeksa", "143 - Pradit Manutham", "144 - Rungroj Market (Khlong 4)", "145 - Phongphet", "146 - Uttaradit", "147 - Mueang Thong", "148 - Liap Khlong 2", "149 - Om Noi", "150 - Sanam Bin Nam", "151 - Thep Rak", "152 - Samut Songkhram", "153 - Wiang Sa", "154 - Prachin Buri", "155 - Pinklao", "156 - Samut Prakan", "157 - Nakhon Ratchasima 3 (Save One)", "158 - Nakhon Sawan 2 (Phrom Nimit)", "159 - Udon Thani 2 (Ban Lueam)", "160 - Mahachai", "161 - Khon Kaen 3 (Ban Non Muang)", "162 - Amata Nakorn 2", "163 - Songkhla", "164 - Chai Nat", "165 - Si Ayutthaya Road", "166 - Rawai 2", "167 - Chiang Mai (Chom Thong)", "168 - Ban Bueng (Chon Buri)", "169 - Phangnga", "170 - Amnat Charoen", "171 - Jo Ho (Nakhon Ratchasima)", "172 - Ban Phai", "175 - Happitat (Bangna)", "301 - Rama 4", "303 - Siri Mangkhalachan", "350 - Ram Inthra KM.4", "351 - Sino Park", "352 - Phatthanakan"];
 
+
+// ============================================================
+// FIREBASE REALTIME SYNC
+// ============================================================
+const FIREBASE_URL = "https://inventory-checklist-dfd36-default-rtdb.firebaseio.com";
+
+const firebaseConfig = { databaseURL: FIREBASE_URL };
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// Write to both localStorage AND Firebase
+function fbSet(key, val) {
+  if (val) {
+    localStorage.setItem(key, val);
+    db.ref('checklist/' + key.replace(/\//g,'_')).set(val);
+  } else {
+    localStorage.removeItem(key);
+    db.ref('checklist/' + key.replace(/\//g,'_')).remove();
+  }
+}
+
+function fbGet(key) {
+  return localStorage.getItem(key) || '';
+}
+
+// Pull all data from Firebase to localStorage on load
+function syncFromFirebase(callback) {
+  db.ref('checklist').once('value', snap => {
+    const data = snap.val();
+    if (data) {
+      Object.entries(data).forEach(([k, v]) => {
+        // Convert back: _ separator used as / replacement
+        // Key format: inv_STORE_SI_NO or inv_STORE_SI_NO_nNIGHT
+        const realKey = k;
+        localStorage.setItem(realKey, v);
+      });
+    }
+    if (callback) callback();
+  });
+}
+
+// Listen for realtime changes from other devices
+function startRealtimeListener() {
+  db.ref('checklist').on('value', snap => {
+    const data = snap.val();
+    if (data) {
+      Object.entries(data).forEach(([k, v]) => {
+        localStorage.setItem(k, v);
+      });
+    }
+    // Re-render current sheet and dashboard
+    if (typeof clStore !== 'undefined' && clStore) {
+      if (typeof renderCLSheet === 'function') renderCLSheet(clSheet || 0);
+      if (typeof updateAllNavCounts === 'function') updateAllNavCounts();
+      if (typeof updateCLProgress === 'function') updateCLProgress();
+    }
+    if (typeof renderDashboard === 'function') {
+      renderDashboard();
+      const el = document.getElementById('last-update');
+      if (el) el.textContent = 'อัปเดต ' + new Date().toLocaleTimeString('th-TH');
+    }
+    // Re-render store picker if visible
+    if (typeof renderStorePicker === 'function') {
+      const picker = document.getElementById('store-picker');
+      if (picker && picker.offsetParent !== null) renderStorePicker();
+    }
+  });
+}
+
+// Online/offline indicator
+function updateOnlineStatus() {
+  const badge = document.getElementById('online-badge');
+  if (!badge) return;
+  if (navigator.onLine) {
+    badge.textContent = '● ออนไลน์';
+    badge.style.color = '#10b981';
+  } else {
+    badge.textContent = '● ออฟไลน์';
+    badge.style.color = '#ef4444';
+  }
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
 const SHEETS = [
   {
     title: 'ก่อนนับ (Pre-Count Preparation)',
@@ -1287,18 +1374,21 @@ function setItemNote(store, sheetIdx, no, val, night='') {
 // คำนวณ % จากสถานะ Checklist จริง
 function calcStorePct(store) {
   if (!store) return 0;
-  let total = 0, done = 0;
+  const allItems = [];
   for (let si = 0; si < SHEETS.length; si++) {
     const items = SHEETS[si].data.filter(d => !d.type);
     const night = si === 1 ? 1 : '';
     for (const item of items) {
-      total++;
-      // Use EXACT same key format as getCLKey/setCLStatus
-      const key = `inv_${store}_${si}_${item.no}${night ? '_n' + night : ''}`;
-      if ((localStorage.getItem(key) || '') === 'done') done++;
+      allItems.push({ si, no: item.no, night });
     }
   }
-  return total ? Math.round(done / total * 100) : 0;
+  if (!allItems.length) return 0;
+  let done = 0;
+  for (const it of allItems) {
+    const s = getItemStatus(store, it.si, it.no, it.night);
+    if (s === 'done') done++;
+  }
+  return Math.round(done / allItems.length * 100);
 }
 
 // หา Phase ล่าสุด จาก sheet ที่มีความคืบหน้า
@@ -1308,10 +1398,7 @@ function getStorePhase(store) {
   for (let si = 0; si < SHEETS.length; si++) {
     const items = SHEETS[si].data.filter(d => !d.type);
     const night = si === 1 ? 1 : '';
-    const hasDone = items.some(item => {
-      const key = `inv_${store}_${si}_${item.no}${night ? '_n' + night : ''}`;
-      return (localStorage.getItem(key) || '') === 'done';
-    });
+    const hasDone = items.some(item => getItemStatus(store, si, item.no, night) === 'done');
     if (hasDone) lastPhase = phaseNames[si] || lastPhase;
   }
   return lastPhase;
@@ -1531,8 +1618,7 @@ function getCLStatus(si, no, night='') {
 
 function setCLStatus(si, no, val, night='') {
   const key = getCLKey(si, no, night);
-  if (val) localStorage.setItem(key, val);
-  else localStorage.removeItem(key);
+  fbSet(key, val);
 }
 
 function getCLNote(si, no, night='') {
@@ -1541,8 +1627,7 @@ function getCLNote(si, no, night='') {
 
 function setCLNote(si, no, val, night='') {
   const key = getCLKey(si, no, night) + '_note';
-  if (val) localStorage.setItem(key, val);
-  else localStorage.removeItem(key);
+  fbSet(key, val);
 }
 
 function statusClass(s) { return s==='done'?'done':s==='fail'?'fail':s==='pending'?'pending':''; }
@@ -1757,31 +1842,19 @@ function handleStoreKey(e) {
     else {
       // exact match
       const val = document.getElementById('cl-store-input').value.trim();
-      const allStores = getAllStoresFromRegional();
-      const match = allStores.find(s => s.toLowerCase() === val.toLowerCase());
+      const match = STORES.find(s => s.toLowerCase() === val.toLowerCase());
       if (match) selectCLStore(match);
     }
   }
 }
 
-function getAllStoresFromRegional() {
-  const all = [];
-  for (const rd of Object.values(REGIONAL_DATA)) {
-    for (const s of rd.stores) {
-      if (!all.includes(s)) all.push(s);
-    }
-  }
-  return all.sort((a,b) => a.localeCompare(b, 'th'));
-}
-
 function filterCLStores() {
   const val = document.getElementById('cl-store-input').value.toLowerCase();
   const dd = document.getElementById('cl-store-dropdown');
-  const allStores = getAllStoresFromRegional();
-  const filtered = val ? allStores.filter(s => s.toLowerCase().includes(val)) : allStores;
-  dd.innerHTML = filtered.slice(0,100).map(s =>
-    `<div class="store-option${s===clStore?' selected':''}" data-store="${s.replace(/"/g,'&quot;')}" onmousedown="selectCLStore(this.dataset.store)">${s}</div>`
-  ).join('') + (filtered.length>100?`<div class="store-option" style="color:var(--muted);text-align:center;font-size:11px">แสดง 100 รายการแรก จากทั้งหมด ${filtered.length}...</div>`:'');
+  const filtered = val ? STORES.filter(s => s.toLowerCase().includes(val)) : STORES;
+  dd.innerHTML = filtered.slice(0,80).map(s =>
+    `<div class="store-option${s===clStore?' selected':''}" onmousedown="selectCLStore('${s.replace(/'/g,"\'")}')">${s}</div>`
+  ).join('') + (filtered.length>80?`<div class="store-option" style="color:var(--muted);text-align:center;font-size:11px">แสดง 80 รายการแรก...</div>`:'');
   dd.classList.add('show');
 }
 
@@ -2113,11 +2186,17 @@ if (clStore) {
   document.getElementById('nav-store-text').textContent = clStore;
 }
 
-// Render all sheets
-for (let i=0; i<SHEETS.length; i++) renderCLSheet(i);
-updateAllNavCounts();
-if (clStore) { showCLContent(); showCLSheet(0); }
-else showNoCLStore();
+// Sync from Firebase first, then render
+syncFromFirebase(() => {
+  for (let i=0; i<SHEETS.length; i++) renderCLSheet(i);
+  updateAllNavCounts();
+  if (clStore) { showCLContent(); showCLSheet(0); }
+  else showNoCLStore();
+  renderDashboard();
+  // Start listening for realtime changes
+  startRealtimeListener();
+  updateOnlineStatus();
+});
 
 // Hook store search input to also update picker
 const _clStoreInput = document.getElementById('cl-store-input');
