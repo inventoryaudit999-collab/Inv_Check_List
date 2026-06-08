@@ -625,9 +625,10 @@ body { font-family: 'Sarabun', sans-serif; background: var(--surface); color: va
   </div>
   <div class="nav-right">
     <div class="nav-store-badge" id="nav-store-badge">🏬 <span id="nav-store-text"></span></div>
-    <div id="sync-badge" style="display:flex;align-items:center;gap:5px;background:rgba(245,158,11,0.18);border:1px solid rgba(245,158,11,0.4);border-radius:20px;padding:3px 10px;font-size:11px;color:#fcd34d">
+    <div id="sync-badge" onclick="manualRefresh()" title="แตะเพื่อ Refresh ข้อมูลใหม่จาก Cloud" style="display:flex;align-items:center;gap:5px;background:rgba(245,158,11,0.18);border:1px solid rgba(245,158,11,0.4);border-radius:20px;padding:3px 10px;font-size:11px;color:#fcd34d;cursor:pointer;user-select:none;transition:transform .15s ease">
       <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:#f59e0b;animation:pulse 1.5s infinite"></span>
       <span id="sync-text">กำลังเชื่อมต่อ...</span>
+      <span id="sync-refresh-icon" style="font-size:11px;margin-left:2px;opacity:0.8">⟳</span>
     </div>
     <span class="nav-last-update" id="last-update"></span>
   </div>
@@ -850,7 +851,16 @@ body { font-family: 'Sarabun', sans-serif; background: var(--surface); color: va
 
 <script>
 // ============================================================
-// 🔥 FIREBASE REALTIME DATABASE SYNC  (v2 — instant per-store listener)
+// 🔥 FIREBASE REALTIME DATABASE SYNC  (v3 — Mobile-safe Realtime)
+// ============================================================
+// v3 Changes (แก้ปัญหา Mobile ไม่ sync):
+//   ✅ visibilitychange → force re-fetch เมื่อกลับมาเปิดหน้า (สำคัญที่สุดสำหรับมือถือ)
+//   ✅ online/offline events → reconnect Firebase อัตโนมัติเมื่อเปลี่ยน Wi-Fi/4G
+//   ✅ pageshow event → handle back/forward cache (BFCache) บน Safari iOS
+//   ✅ Heartbeat ทุก 25 วินาที → ตรวจว่า listener ยังทำงาน
+//   ✅ Stale-detection → ถ้าไม่มี event 60 วินาที จะ force reconnect
+//   ✅ Manual refresh button → คลิก sync badge เพื่อ refresh เอง
+//   ✅ Auto-reconnect: ถ้า connection แย่ จะ goOffline()→goOnline() เพื่อรีเซ็ต socket
 // ============================================================
 const firebaseConfig = {
   apiKey: "AIzaSyD-9vKBP9rnQQJbPGmLhCWVtr0WOyVPSpo",
@@ -867,6 +877,10 @@ let fbReady = false;
 let fbInitialLoad = false;
 let fbWriteQueue = [];                  // Queue ของ writes ที่ค้างขณะ offline
 let fbWriteOk = 0, fbWriteFail = 0;     // Counter สำหรับ debug
+let fbLastEventTime = Date.now();       // ใช้ตรวจ stale connection
+let fbRootListenerAttached = false;     // ป้องกัน attach ซ้ำซ้อน
+let fbHeartbeatTimer = null;
+let fbReconnectInProgress = false;
 
 try {
   firebase.initializeApp(firebaseConfig);
@@ -1011,7 +1025,7 @@ function scheduleFullRender() {
 }
 
 // ============================================================
-// 🎯 PER-STORE INSTANT LISTENER
+// 🎯 PER-STORE INSTANT LISTENER  (v3)
 // ฟัง child_added / child_changed / child_removed บนสาขาที่เลือกปัจจุบัน
 // ทำให้การอัปเดตจากเครื่องอื่น "เห็นทันที" ไม่ต้องรอ debounce
 // ============================================================
@@ -1019,9 +1033,13 @@ let _instantRef = null;
 let _instantStore = null;
 
 function attachStoreInstantListener(store) {
-  // ถอด listener เก่าทิ้ง
+  // ถอด listener เก่าทิ้ง (ทุก event type)
   if (_instantRef) {
-    _instantRef.off();
+    try {
+      _instantRef.off('child_added');
+      _instantRef.off('child_changed');
+      _instantRef.off('child_removed');
+    } catch(e) { console.warn('[FB] detach old listener:', e); }
     _instantRef = null;
     _instantStore = null;
   }
@@ -1031,6 +1049,7 @@ function attachStoreInstantListener(store) {
   _instantRef = fbDB.ref(`checklists/${fbSafeKey(store)}`);
 
   const onItem = (snap, isRemoved) => {
+    fbLastEventTime = Date.now();              // 🛡️ Track ว่า listener ยังทำงาน
     const itemKey = snap.key;
     const itemData = isRemoved ? null : snap.val();
     const sheetIdx = applyItemUpdate(store, itemKey, itemData);
@@ -1056,7 +1075,7 @@ function attachStoreInstantListener(store) {
 }
 
 // ============================================================
-// 🚀 INIT
+// 🚀 INIT — v3 Mobile-safe
 // ============================================================
 function initFirebaseSync() {
   if (!fbDB) { setSyncStatus('offline', 'ออฟไลน์'); return; }
@@ -1066,6 +1085,7 @@ function initFirebaseSync() {
   fbDB.ref('.info/connected').on('value', snap => {
     if (snap.val() === true) {
       fbReady = true;
+      fbLastEventTime = Date.now();
       setSyncStatus('online', 'ออนไลน์');
       // Flush queue
       while (fbWriteQueue.length) {
@@ -1083,7 +1103,42 @@ function initFirebaseSync() {
   });
 
   // ─── ROOT listener: bulk load + dashboard refresh ───
-  fbDB.ref('checklists').on('value', snapshot => {
+  attachRootListener();
+
+  // ─── Attach instant listener ไปสาขาที่เลือกอยู่แล้ว ───
+  const initStore = localStorage.getItem('inv_cl_store') || '';
+  if (initStore) attachStoreInstantListener(initStore);
+
+  // ─── 🛡️ Mobile-safe handlers (สำคัญที่สุด!) ───
+  setupMobileSafeHandlers();
+
+  // ─── ⏱️ Heartbeat: ตรวจ connection ทุก 25 วินาที ───
+  startHeartbeat();
+
+  // ─── Debug helpers (เปิด console แล้วพิมพ์ fbDebug() ดูได้) ───
+  window.fbDebug = () => ({
+    fbReady,
+    fbInitialLoad,
+    writeOk: fbWriteOk,
+    writeFail: fbWriteFail,
+    queueLength: fbWriteQueue.length,
+    instantStore: _instantStore,
+    lastEventAgo: Math.round((Date.now() - fbLastEventTime) / 1000) + 's',
+    pageVisible: !document.hidden,
+    online: navigator.onLine,
+    databaseURL: firebaseConfig.databaseURL
+  });
+  window.forceRefresh = manualRefresh;  // shortcut
+}
+
+// === Attach root listener (สามารถเรียกซ้ำได้ — จะ detach เก่าก่อน) ===
+function attachRootListener() {
+  if (!fbDB) return;
+  const rootRef = fbDB.ref('checklists');
+  if (fbRootListenerAttached) rootRef.off('value');
+  fbRootListenerAttached = true;
+  rootRef.on('value', snapshot => {
+    fbLastEventTime = Date.now();
     const data = snapshot.val() || {};
     let count = 0;
     for (const [store, items] of Object.entries(data)) {
@@ -1104,21 +1159,141 @@ function initFirebaseSync() {
     console.error('[FB root listen error]', err);
     setSyncStatus('offline', '⚠️ อ่านไม่ได้ — ตรวจ Firebase Rules');
   });
+}
 
-  // ─── Attach instant listener ไปสาขาที่เลือกอยู่แล้ว ───
-  const initStore = localStorage.getItem('inv_cl_store') || '';
-  if (initStore) attachStoreInstantListener(initStore);
+// ============================================================
+// 🛡️ MOBILE-SAFE HANDLERS
+// แก้ปัญหามือถือ (iOS/Android) ที่หยุด WebSocket เมื่อหน้าเว็บอยู่เบื้องหลัง
+// ============================================================
+function setupMobileSafeHandlers() {
 
-  // ─── Debug helpers (เปิด console แล้วพิมพ์ fbDebug() ดูได้) ───
-  window.fbDebug = () => ({
-    fbReady,
-    fbInitialLoad,
-    writeOk: fbWriteOk,
-    writeFail: fbWriteFail,
-    queueLength: fbWriteQueue.length,
-    instantStore: _instantStore,
-    databaseURL: firebaseConfig.databaseURL
+  // ─── 1) visibilitychange: หน้ากลับมาเปิด → force refresh ───
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      console.log('[FB] Page visible → force refresh');
+      forceReconnectAndFetch('กลับเข้าหน้า');
+    }
   });
+
+  // ─── 2) pageshow: BFCache restore (Safari iOS) ───
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      console.log('[FB] BFCache restore → force refresh');
+      forceReconnectAndFetch('BFCache');
+    }
+  });
+
+  // ─── 3) online/offline: เครือข่ายเปลี่ยน Wi-Fi ↔ 4G ───
+  window.addEventListener('online', () => {
+    console.log('[FB] Network online → reconnect');
+    forceReconnectAndFetch('Network online');
+  });
+  window.addEventListener('offline', () => {
+    console.log('[FB] Network offline');
+    setSyncStatus('offline', '📵 ไม่มีเน็ต');
+  });
+
+  // ─── 4) focus: tab/window focus (desktop) ───
+  window.addEventListener('focus', () => {
+    if (Date.now() - fbLastEventTime > 30000) {  // > 30s no events
+      console.log('[FB] Focus + stale → force refresh');
+      forceReconnectAndFetch('Focus stale');
+    }
+  });
+}
+
+// ============================================================
+// 🔄 FORCE RECONNECT & FETCH
+// บังคับให้ Firebase ตัด-ต่อ socket ใหม่ และดึงข้อมูลล่าสุด
+// ============================================================
+function forceReconnectAndFetch(reason) {
+  if (!fbDB || fbReconnectInProgress) return;
+  fbReconnectInProgress = true;
+
+  setSyncStatus('connecting', '🔄 อัปเดต...');
+  flashSyncDot('#3b82f6', 800);
+
+  try {
+    // 1) ตัด-ต่อ WebSocket เพื่อรีเซ็ตทุกอย่าง
+    fbDB.goOffline();
+    setTimeout(() => {
+      fbDB.goOnline();
+
+      // 2) Force-fetch ข้อมูลล่าสุดด้วย .once() (ไม่พึ่ง listener)
+      fbDB.ref('checklists').once('value').then(snap => {
+        const data = snap.val() || {};
+        let count = 0;
+        for (const [store, items] of Object.entries(data)) {
+          if (!items || typeof items !== 'object') continue;
+          for (const [itemKey, itemData] of Object.entries(items)) {
+            if (!itemData || typeof itemData !== 'object') continue;
+            applyItemUpdate(store, itemKey, itemData);
+            count++;
+          }
+        }
+        fbLastEventTime = Date.now();
+        scheduleFullRender();
+        setSyncStatus('online', 'ออนไลน์');
+        flashSyncDot('#22c55e', 600);
+        console.log('[FB] Force refresh OK (' + reason + ') — items:', count);
+
+        // 3) Re-attach instant listener (ป้องกัน listener ตายเงียบ)
+        const curStore = localStorage.getItem('inv_cl_store') || '';
+        if (curStore) attachStoreInstantListener(curStore);
+      }).catch(err => {
+        console.error('[FB] Force refresh FAIL', err);
+        setSyncStatus('offline', '⚠️ ดึงข้อมูลไม่ได้');
+        flashSyncDot('#ef4444', 800);
+      }).finally(() => {
+        fbReconnectInProgress = false;
+      });
+    }, 150);
+  } catch (e) {
+    console.error('[FB] reconnect error', e);
+    fbReconnectInProgress = false;
+  }
+}
+
+// ============================================================
+// ⏱️ HEARTBEAT
+// ตรวจว่า listener ยังทำงานทุก 25 วินาที — ถ้าเงียบเกิน 60 วินาที = ตาย
+// ============================================================
+function startHeartbeat() {
+  if (fbHeartbeatTimer) clearInterval(fbHeartbeatTimer);
+  fbHeartbeatTimer = setInterval(() => {
+    if (document.hidden) return;        // ไม่ check ตอนหน้าซ่อน
+    if (!navigator.onLine) return;       // ไม่ check ตอนไม่มีเน็ต
+
+    const sinceEvent = Date.now() - fbLastEventTime;
+    // ถ้าไม่มี event > 60 วินาที + เคยออนไลน์ → reconnect
+    if (sinceEvent > 60000 && fbReady) {
+      console.log('[FB] Heartbeat: stale ' + Math.round(sinceEvent/1000) + 's → reconnect');
+      forceReconnectAndFetch('Heartbeat stale');
+    } else {
+      // Ping เบาๆ: .info/serverTimeOffset
+      fbDB.ref('.info/serverTimeOffset').once('value')
+        .then(() => { fbLastEventTime = Date.now(); })
+        .catch(() => {});
+    }
+  }, 25000);
+}
+
+// ============================================================
+// 👆 MANUAL REFRESH (ผู้ใช้กดที่ sync badge)
+// ============================================================
+function manualRefresh() {
+  if (fbReconnectInProgress) return;
+  console.log('[FB] Manual refresh triggered');
+  const icon = document.getElementById('sync-refresh-icon');
+  if (icon) {
+    icon.style.transition = 'transform .6s';
+    icon.style.transform = 'rotate(360deg)';
+    setTimeout(() => {
+      icon.style.transition = 'none';
+      icon.style.transform = 'rotate(0deg)';
+    }, 700);
+  }
+  forceReconnectAndFetch('Manual');
 }
 
 // Start sync
@@ -1287,18 +1462,21 @@ function setItemNote(store, sheetIdx, no, val, night='') {
 // คำนวณ % จากสถานะ Checklist จริง
 function calcStorePct(store) {
   if (!store) return 0;
-  let total = 0, done = 0;
+  const allItems = [];
   for (let si = 0; si < SHEETS.length; si++) {
     const items = SHEETS[si].data.filter(d => !d.type);
     const night = si === 1 ? 1 : '';
     for (const item of items) {
-      total++;
-      // Use EXACT same key format as getCLKey/setCLStatus
-      const key = `inv_${store}_${si}_${item.no}${night ? '_n' + night : ''}`;
-      if ((localStorage.getItem(key) || '') === 'done') done++;
+      allItems.push({ si, no: item.no, night });
     }
   }
-  return total ? Math.round(done / total * 100) : 0;
+  if (!allItems.length) return 0;
+  let done = 0;
+  for (const it of allItems) {
+    const s = getItemStatus(store, it.si, it.no, it.night);
+    if (s === 'done') done++;
+  }
+  return Math.round(done / allItems.length * 100);
 }
 
 // หา Phase ล่าสุด จาก sheet ที่มีความคืบหน้า
@@ -1308,10 +1486,7 @@ function getStorePhase(store) {
   for (let si = 0; si < SHEETS.length; si++) {
     const items = SHEETS[si].data.filter(d => !d.type);
     const night = si === 1 ? 1 : '';
-    const hasDone = items.some(item => {
-      const key = `inv_${store}_${si}_${item.no}${night ? '_n' + night : ''}`;
-      return (localStorage.getItem(key) || '') === 'done';
-    });
+    const hasDone = items.some(item => getItemStatus(store, si, item.no, night) === 'done');
     if (hasDone) lastPhase = phaseNames[si] || lastPhase;
   }
   return lastPhase;
@@ -1757,31 +1932,19 @@ function handleStoreKey(e) {
     else {
       // exact match
       const val = document.getElementById('cl-store-input').value.trim();
-      const allStores = getAllStoresFromRegional();
-      const match = allStores.find(s => s.toLowerCase() === val.toLowerCase());
+      const match = STORES.find(s => s.toLowerCase() === val.toLowerCase());
       if (match) selectCLStore(match);
     }
   }
 }
 
-function getAllStoresFromRegional() {
-  const all = [];
-  for (const rd of Object.values(REGIONAL_DATA)) {
-    for (const s of rd.stores) {
-      if (!all.includes(s)) all.push(s);
-    }
-  }
-  return all.sort((a,b) => a.localeCompare(b, 'th'));
-}
-
 function filterCLStores() {
   const val = document.getElementById('cl-store-input').value.toLowerCase();
   const dd = document.getElementById('cl-store-dropdown');
-  const allStores = getAllStoresFromRegional();
-  const filtered = val ? allStores.filter(s => s.toLowerCase().includes(val)) : allStores;
-  dd.innerHTML = filtered.slice(0,100).map(s =>
-    `<div class="store-option${s===clStore?' selected':''}" data-store="${s.replace(/"/g,'&quot;')}" onmousedown="selectCLStore(this.dataset.store)">${s}</div>`
-  ).join('') + (filtered.length>100?`<div class="store-option" style="color:var(--muted);text-align:center;font-size:11px">แสดง 100 รายการแรก จากทั้งหมด ${filtered.length}...</div>`:'');
+  const filtered = val ? STORES.filter(s => s.toLowerCase().includes(val)) : STORES;
+  dd.innerHTML = filtered.slice(0,80).map(s =>
+    `<div class="store-option${s===clStore?' selected':''}" onmousedown="selectCLStore('${s.replace(/'/g,"\'")}')">${s}</div>`
+  ).join('') + (filtered.length>80?`<div class="store-option" style="color:var(--muted);text-align:center;font-size:11px">แสดง 80 รายการแรก...</div>`:'');
   dd.classList.add('show');
 }
 
