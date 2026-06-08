@@ -1287,21 +1287,18 @@ function setItemNote(store, sheetIdx, no, val, night='') {
 // คำนวณ % จากสถานะ Checklist จริง
 function calcStorePct(store) {
   if (!store) return 0;
-  const allItems = [];
+  let total = 0, done = 0;
   for (let si = 0; si < SHEETS.length; si++) {
     const items = SHEETS[si].data.filter(d => !d.type);
     const night = si === 1 ? 1 : '';
     for (const item of items) {
-      allItems.push({ si, no: item.no, night });
+      total++;
+      // Use EXACT same key format as getCLKey/setCLStatus
+      const key = `inv_${store}_${si}_${item.no}${night ? '_n' + night : ''}`;
+      if ((localStorage.getItem(key) || '') === 'done') done++;
     }
   }
-  if (!allItems.length) return 0;
-  let done = 0;
-  for (const it of allItems) {
-    const s = getItemStatus(store, it.si, it.no, it.night);
-    if (s === 'done') done++;
-  }
-  return Math.round(done / allItems.length * 100);
+  return total ? Math.round(done / total * 100) : 0;
 }
 
 // หา Phase ล่าสุด จาก sheet ที่มีความคืบหน้า
@@ -1311,7 +1308,10 @@ function getStorePhase(store) {
   for (let si = 0; si < SHEETS.length; si++) {
     const items = SHEETS[si].data.filter(d => !d.type);
     const night = si === 1 ? 1 : '';
-    const hasDone = items.some(item => getItemStatus(store, si, item.no, night) === 'done');
+    const hasDone = items.some(item => {
+      const key = `inv_${store}_${si}_${item.no}${night ? '_n' + night : ''}`;
+      return (localStorage.getItem(key) || '') === 'done';
+    });
     if (hasDone) lastPhase = phaseNames[si] || lastPhase;
   }
   return lastPhase;
@@ -1757,19 +1757,31 @@ function handleStoreKey(e) {
     else {
       // exact match
       const val = document.getElementById('cl-store-input').value.trim();
-      const match = STORES.find(s => s.toLowerCase() === val.toLowerCase());
+      const allStores = getAllStoresFromRegional();
+      const match = allStores.find(s => s.toLowerCase() === val.toLowerCase());
       if (match) selectCLStore(match);
     }
   }
 }
 
+function getAllStoresFromRegional() {
+  const all = [];
+  for (const rd of Object.values(REGIONAL_DATA)) {
+    for (const s of rd.stores) {
+      if (!all.includes(s)) all.push(s);
+    }
+  }
+  return all.sort((a,b) => a.localeCompare(b, 'th'));
+}
+
 function filterCLStores() {
   const val = document.getElementById('cl-store-input').value.toLowerCase();
   const dd = document.getElementById('cl-store-dropdown');
-  const filtered = val ? STORES.filter(s => s.toLowerCase().includes(val)) : STORES;
-  dd.innerHTML = filtered.slice(0,80).map(s =>
-    `<div class="store-option${s===clStore?' selected':''}" onmousedown="selectCLStore('${s.replace(/'/g,"\'")}')">${s}</div>`
-  ).join('') + (filtered.length>80?`<div class="store-option" style="color:var(--muted);text-align:center;font-size:11px">แสดง 80 รายการแรก...</div>`:'');
+  const allStores = getAllStoresFromRegional();
+  const filtered = val ? allStores.filter(s => s.toLowerCase().includes(val)) : allStores;
+  dd.innerHTML = filtered.slice(0,100).map(s =>
+    `<div class="store-option${s===clStore?' selected':''}" data-store="${s.replace(/"/g,'&quot;')}" onmousedown="selectCLStore(this.dataset.store)">${s}</div>`
+  ).join('') + (filtered.length>100?`<div class="store-option" style="color:var(--muted);text-align:center;font-size:11px">แสดง 100 รายการแรก จากทั้งหมด ${filtered.length}...</div>`:'');
   dd.classList.add('show');
 }
 
