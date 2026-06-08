@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- ===== ANTI-CACHE (กันมือถือใช้ไฟล์เก่า — สำคัญสำหรับ realtime app) ===== -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<!-- VERSION: v4.0 (2026-06-08) - Mobile Realtime + Diagnostic Panel -->
 <title>INV Audit – Dashboard & Checklist</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Prompt:wght@500;600;700&display=swap" rel="stylesheet">
 
@@ -630,7 +635,9 @@ body { font-family: 'Sarabun', sans-serif; background: var(--surface); color: va
       <span id="sync-text">กำลังเชื่อมต่อ...</span>
       <span id="sync-refresh-icon" style="font-size:11px;margin-left:2px;opacity:0.8">⟳</span>
     </div>
+    <div onclick="openDiagnostic()" title="เปิด Diagnostic — เช็คว่า Firebase ทำงานหรือไม่" style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);cursor:pointer;font-size:12px;color:#cbd5e1;user-select:none;transition:all .15s">🔍</div>
     <span class="nav-last-update" id="last-update"></span>
+    <span style="font-size:9px;color:rgba(255,255,255,0.35);letter-spacing:0.5px;margin-left:4px">v4.0</span>
   </div>
 </nav>
 
@@ -1284,6 +1291,7 @@ function startHeartbeat() {
 function manualRefresh() {
   if (fbReconnectInProgress) return;
   console.log('[FB] Manual refresh triggered');
+  diagLog('Manual refresh');
   const icon = document.getElementById('sync-refresh-icon');
   if (icon) {
     icon.style.transition = 'transform .6s';
@@ -1295,6 +1303,229 @@ function manualRefresh() {
   }
   forceReconnectAndFetch('Manual');
 }
+
+// ============================================================
+// 📜 EVENT LOG (สำหรับ Diagnostic Panel)
+// ============================================================
+const diagEvents = [];
+function diagLog(msg, type) {
+  const ts = new Date().toLocaleTimeString('th-TH', {hour12: false});
+  const color = type === 'err' ? '#fca5a5' : type === 'ok' ? '#6ee7b7' : type === 'in' ? '#93c5fd' : '#cbd5e1';
+  diagEvents.unshift({ ts, msg, color });
+  if (diagEvents.length > 30) diagEvents.length = 30;
+  const el = document.getElementById('diag-event-log');
+  if (el && document.getElementById('diag-overlay').style.display === 'flex') {
+    renderDiagLog();
+  }
+}
+function renderDiagLog() {
+  const el = document.getElementById('diag-event-log');
+  if (!el) return;
+  el.innerHTML = diagEvents.slice(0, 10).map(e =>
+    `<div style="color:${e.color}"><span style="color:#64748b">${e.ts}</span> ${e.msg}</div>`
+  ).join('') || '<div style="color:#64748b">— ยังไม่มี event —</div>';
+}
+
+// Hook into existing flashSyncDot to log incoming events
+const _origFlashSyncDot = flashSyncDot;
+flashSyncDot = function(color, duration) {
+  _origFlashSyncDot(color, duration);
+  if (color === '#3b82f6') diagLog('📥 incoming update', 'in');
+  else if (color === '#22c55e') diagLog('📤 write OK', 'ok');
+  else if (color === '#ef4444') diagLog('❌ write FAIL — Rules?', 'err');
+};
+
+// ============================================================
+// 🔍 DIAGNOSTIC PANEL
+// ============================================================
+function openDiagnostic() {
+  document.getElementById('diag-overlay').style.display = 'flex';
+  renderDiagStatus();
+  renderDiagLog();
+}
+function closeDiagnostic() {
+  document.getElementById('diag-overlay').style.display = 'none';
+}
+
+function renderDiagStatus() {
+  const el = document.getElementById('diag-status');
+  if (!el) return;
+  const sinceEvent = Math.round((Date.now() - fbLastEventTime) / 1000);
+  const curStore = localStorage.getItem('inv_cl_store') || '(ยังไม่เลือก)';
+  const statusBox = (label, val, color) => `
+    <div style="background:${color};border-radius:8px;padding:10px 12px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1px;opacity:0.8;text-transform:uppercase">${label}</div>
+      <div style="font-size:13px;font-weight:600;margin-top:2px;word-break:break-all">${val}</div>
+    </div>`;
+  el.innerHTML = `
+    ${statusBox('Firebase', fbReady ? '✅ ONLINE' : '🔴 OFFLINE', fbReady ? '#dcfce7' : '#fee2e2')}
+    ${statusBox('Network', navigator.onLine ? '✅ ONLINE' : '🔴 OFFLINE', navigator.onLine ? '#dcfce7' : '#fee2e2')}
+    ${statusBox('Writes OK', fbWriteOk, '#dbeafe')}
+    ${statusBox('Writes FAIL', fbWriteFail, fbWriteFail > 0 ? '#fee2e2' : '#f1f5f9')}
+    ${statusBox('Last Event', sinceEvent < 60 ? sinceEvent + 's ago' : Math.round(sinceEvent/60) + 'm ago', sinceEvent < 60 ? '#dcfce7' : '#fef3c7')}
+    ${statusBox('Queue', fbWriteQueue.length, fbWriteQueue.length > 0 ? '#fef3c7' : '#f1f5f9')}
+    <div style="grid-column:span 2;background:#f1f5f9;border-radius:8px;padding:10px 12px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1px;opacity:0.8;text-transform:uppercase">Selected Store</div>
+      <div style="font-size:13px;font-weight:600;margin-top:2px">${curStore}</div>
+    </div>
+    <div style="grid-column:span 2;background:#f1f5f9;border-radius:8px;padding:10px 12px">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1px;opacity:0.8;text-transform:uppercase">Database URL</div>
+      <div style="font-size:10px;font-family:monospace;margin-top:2px;word-break:break-all;color:#64748b">${firebaseConfig.databaseURL}</div>
+    </div>`;
+}
+
+// ============================================================
+// 🏓 PING TEST — เขียน + อ่าน timestamp เพื่อยืนยัน sync
+// ============================================================
+async function runPingTest() {
+  const btn = document.getElementById('diag-ping-btn');
+  const out = document.getElementById('diag-ping-result');
+  if (!btn || !out) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Testing...';
+  out.style.padding = '10px';
+  out.textContent = '';
+
+  const log = (msg, color) => {
+    const c = color || '#10b981';
+    out.innerHTML += `<div style="color:${c}">${msg}</div>`;
+  };
+  const fail = (msg) => log('❌ ' + msg, '#fca5a5');
+  const ok = (msg) => log('✅ ' + msg, '#6ee7b7');
+
+  try {
+    // Step 1: Check Firebase init
+    log('Step 1: Check Firebase init...', '#cbd5e1');
+    if (!fbDB) { fail('Firebase DB not initialized'); return; }
+    ok('Firebase DB initialized');
+
+    // Step 2: Check connection
+    log('\nStep 2: Check .info/connected...', '#cbd5e1');
+    const connSnap = await fbDB.ref('.info/connected').once('value');
+    if (connSnap.val() !== true) {
+      fail('Not connected to Firebase (.info/connected = false)');
+      fail('→ ตรวจ Internet หรือ Firebase URL ผิด');
+      return;
+    }
+    ok('Connected to Firebase');
+
+    // Step 3: WRITE test
+    const testPath = `_pingtest/${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const testVal = { ts: Date.now(), msg: 'ping from ' + (navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop') };
+    log('\nStep 3: WRITE test → ' + testPath, '#cbd5e1');
+    const writeStart = Date.now();
+    try {
+      await fbDB.ref(testPath).set(testVal);
+      const writeMs = Date.now() - writeStart;
+      ok(`WRITE OK (${writeMs}ms)`);
+    } catch (e) {
+      fail('WRITE FAIL: ' + e.message);
+      if (e.message.toLowerCase().includes('permission')) {
+        fail('→ Firebase Rules บล็อก! ดู instructions ด้านล่าง');
+      }
+      return;
+    }
+
+    // Step 4: READ back
+    log('\nStep 4: READ back...', '#cbd5e1');
+    const readStart = Date.now();
+    let readSnap;
+    try {
+      readSnap = await fbDB.ref(testPath).once('value');
+      const readMs = Date.now() - readStart;
+      ok(`READ OK (${readMs}ms)`);
+    } catch (e) {
+      fail('READ FAIL: ' + e.message);
+      return;
+    }
+
+    const readVal = readSnap.val();
+    if (!readVal || readVal.ts !== testVal.ts) {
+      fail('READ value mismatch! expected ts=' + testVal.ts + ' got=' + JSON.stringify(readVal));
+      return;
+    }
+    ok('Value matches!');
+
+    // Step 5: Listener test
+    log('\nStep 5: Realtime listener test (3s)...', '#cbd5e1');
+    let received = false;
+    const listenPath = `_pingtest/_listen_${Date.now()}`;
+    const listenRef = fbDB.ref(listenPath);
+    listenRef.on('value', snap => {
+      const v = snap.val();
+      if (v && v.fromRemote === true) received = true;
+    });
+    setTimeout(async () => {
+      await fbDB.ref(listenPath).set({ fromRemote: true, ts: Date.now() });
+    }, 200);
+    await new Promise(r => setTimeout(r, 3000));
+    listenRef.off();
+    if (received) ok('Listener received update ✓');
+    else { fail('Listener did NOT receive update within 3s'); fail('→ WebSocket อาจถูก block หรือ Rules อ่านไม่ได้'); }
+
+    // Cleanup
+    log('\nStep 6: Cleanup test data...', '#cbd5e1');
+    try {
+      await fbDB.ref(testPath).remove();
+      await fbDB.ref(listenPath).remove();
+      ok('Cleanup done');
+    } catch (e) { log('cleanup skipped: ' + e.message, '#fbbf24'); }
+
+    // Check actual data
+    log('\nStep 7: Check จำนวน stores ใน checklists...', '#cbd5e1');
+    try {
+      const allSnap = await fbDB.ref('checklists').once('value');
+      const allData = allSnap.val() || {};
+      const storeCount = Object.keys(allData).length;
+      let itemCount = 0;
+      for (const s of Object.values(allData)) {
+        if (s && typeof s === 'object') itemCount += Object.keys(s).length;
+      }
+      ok(`พบ ${storeCount} stores, ${itemCount} items`);
+    } catch (e) { fail('อ่าน checklists ไม่ได้: ' + e.message); }
+
+    log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━', '#fcd34d');
+    log('🎉 PING TEST ทั้งหมดผ่าน!', '#fcd34d');
+    log('ถ้ายังไม่ realtime → ลองกด "Clear Cache + Reload" บนมือถือ', '#fcd34d');
+  } catch (e) {
+    fail('Unexpected error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Run PING TEST อีกครั้ง';
+    renderDiagStatus();  // refresh status
+  }
+}
+
+// ============================================================
+// 🗑️ HARD RELOAD (ล้าง cache มือถือ)
+// ============================================================
+function hardReload() {
+  if (!confirm('ล้าง cache และโหลดหน้าใหม่?\n(localStorage จะไม่ถูกล้าง — เฉพาะ cache ของ HTML/CSS/JS)')) return;
+  diagLog('Hard reload');
+  // Clear all caches if available
+  if ('caches' in window) {
+    caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))));
+  }
+  // Unregister service workers if any
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  }
+  // Force reload bypassing cache
+  setTimeout(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('_t', Date.now());
+    window.location.replace(url.toString());
+  }, 300);
+}
+
+// Auto-show diagnostic if not connected after 12s (first time only)
+setTimeout(() => {
+  if (!fbReady && !window._diagAutoShown) {
+    window._diagAutoShown = true;
+    diagLog('⚠️ ไม่ connect ภายใน 12s — เปิด diagnostic', 'err');
+    openDiagnostic();
+  }
+}, 12000);
 
 // Start sync
 if (document.readyState === 'loading') {
@@ -2343,6 +2574,58 @@ function updateHamVisibility() {
     <div class="mbn-item" id="mbn-menu" onclick="toggleCLSidebar()">
       <span class="mbn-icon">☰</span>
       <span>เมนู</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 🔍 DIAGNOSTIC PANEL (v4) — เครื่องมือเช็คปัญหา Realtime Sync -->
+<!-- ============================================================ -->
+<div id="diag-overlay" onclick="if(event.target===this)closeDiagnostic()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 25px 60px rgba(0,0,0,0.4)">
+    <div style="background:linear-gradient(135deg,#0f2744,#1a4da0);color:#fff;padding:18px 22px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#fcd34d;letter-spacing:2px">DIAGNOSTIC</div>
+        <div style="font-size:18px;font-weight:700;margin-top:2px">🔥 Firebase Realtime Sync</div>
+      </div>
+      <div onclick="closeDiagnostic()" style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px">✕</div>
+    </div>
+    <div style="padding:20px 22px">
+
+      <!-- Status grid -->
+      <div id="diag-status" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:12px">
+        <!-- filled by JS -->
+      </div>
+
+      <!-- PING TEST -->
+      <div style="background:#f1f5f9;border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="font-weight:700;font-size:13px;color:#0f2744;margin-bottom:8px">🏓 PING TEST</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:10px;line-height:1.5">เขียน timestamp ลง Firebase → อ่านกลับมา → วัด latency ถ้าผ่าน = sync ทำงาน ถ้าไม่ผ่าน = Rules ผิดหรือ network block</div>
+        <button onclick="runPingTest()" id="diag-ping-btn" style="width:100%;padding:10px;background:#1a4da0;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer">▶ Run PING TEST</button>
+        <div id="diag-ping-result" style="margin-top:10px;font-size:12px;font-family:monospace;background:#0f172a;color:#10b981;padding:0;border-radius:6px;max-height:200px;overflow:auto;white-space:pre-wrap;line-height:1.5"></div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <button onclick="manualRefresh();" style="padding:10px;background:#10b981;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">🔄 Force Refresh</button>
+        <button onclick="hardReload()" style="padding:10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer">🗑️ Clear Cache + Reload</button>
+      </div>
+
+      <!-- Help / Checklist -->
+      <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:12px;font-size:11px;color:#78350f;line-height:1.7">
+        <div style="font-weight:700;margin-bottom:6px;font-size:12px">⚠️ ถ้า PING FAIL — เช็ค Firebase Rules ก่อน</div>
+        1. <a href="https://console.firebase.google.com/project/inv-checklist/database/inv-checklist-default-rtdb/rules" target="_blank" style="color:#1a4da0;font-weight:700">เปิด Firebase Console → Rules</a><br>
+        2. ตรวจว่าเป็น:<br>
+        <code style="background:#fff;padding:4px 8px;border-radius:4px;display:inline-block;margin:4px 0">{"rules":{"checklists":{".read":true,".write":true}}}</code><br>
+        3. กด <b>Publish</b> สีฟ้ามุมขวาบน → รอ 5 วินาที → กด PING TEST ใหม่
+      </div>
+
+      <!-- Event log -->
+      <div style="margin-top:14px">
+        <div style="font-weight:700;font-size:12px;color:#0f2744;margin-bottom:6px">📜 Event Log (ล่าสุด 10 รายการ)</div>
+        <div id="diag-event-log" style="background:#0f172a;color:#cbd5e1;padding:10px;border-radius:6px;font-family:monospace;font-size:10px;max-height:160px;overflow:auto;line-height:1.6"></div>
+      </div>
+
     </div>
   </div>
 </div>
